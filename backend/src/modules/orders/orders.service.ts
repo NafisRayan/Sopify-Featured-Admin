@@ -266,7 +266,7 @@ export class OrdersService {
     }
     for (const add of added) {
       const variantProduct = await this.prisma.product.findFirst({
-        where: { variants: { path: ['$'], array_contains: [{ id: add.variantId }] } },
+        where: { variants: { array_contains: [{ id: add.variantId }] } },
       })
       if (!variantProduct) throw new Error('Variant no longer exists')
       const variants = parseJson<Record<string, any>[]>(variantProduct.variants as string, [])
@@ -415,7 +415,7 @@ export class OrdersService {
     if (!customer) throw new Error('Select a customer')
     const lineItems: Record<string, unknown>[] = []
     for (const li of input.items) {
-      const product = await this.prisma.product.findFirst({ where: { variants: { path: ['$'], array_contains: [{ id: li.variantId }] } } })
+      const product = await this.prisma.product.findFirst({ where: { variants: { array_contains: [{ id: li.variantId }] } } })
       if (!product) throw new Error('Invalid variant in draft')
       const variant = parseJson<Record<string, any>[]>(product.variants as string, []).find((v) => v.id === li.variantId)
       if (!variant) throw new Error('Invalid variant')
@@ -433,6 +433,10 @@ export class OrdersService {
         imageSrc: parseJson<{ src?: string }[]>(product.media as string, [])[0]?.src,
       })
     }
+    const addr: Record<string, unknown> =
+      (parseJson<Record<string, unknown>>(customer.defaultAddress, {}) as Record<string, unknown>) ?? {
+        firstName: customer.firstName, lastName: customer.lastName, address1: '', city: '', province: '', country: '', zip: '',
+      }
     const subtotal = roundMoney(lineItems.reduce((s: number, li: any) => s + li.price * li.quantity, 0))
     const shipping = 6.99
     const tax = roundMoney(subtotal * TAX_RATE)
@@ -449,8 +453,8 @@ export class OrdersService {
         status: 'draft',
         channel: 'Online Store',
         lineItems: toJson(lineItems),
-        shippingAddress: toJson(customer.defaultAddress),
-        billingAddress: toJson(customer.defaultAddress),
+        shippingAddress: toJson(addr),
+        billingAddress: toJson(addr),
         shippingTitle: 'Standard shipping',
         shippingPrice: shipping,
         subtotal,

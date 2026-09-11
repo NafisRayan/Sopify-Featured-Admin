@@ -116,6 +116,7 @@ type AdminSnapshot {
   returns: [ReturnRecord!]!
   orderEdits: [JSON!]!
   plan: Plan!
+  settings: StoreSettings!
 }
 
 # ─── Mutation root ──────────────────────────────────────────────────────────

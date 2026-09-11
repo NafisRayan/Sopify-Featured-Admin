@@ -1,0 +1,353 @@
+- generic [ref=f39e1]:
+  - generic [ref=f39e3]:
+    - navigation "Main navigation" [ref=f39e4]:
+      - button "Northstar Goods Demo store" [ref=f39e8]:
+        - generic [ref=f39e15]:
+          - generic [ref=f39e16]: Northstar Goods
+          - generic [ref=f39e17]: Demo store
+      - generic [ref=f39e20]:
+        - link "Home" [ref=f39e21] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f39e26]:
+          - button "Orders 48" [expanded] [ref=f39e27]:
+            - generic [ref=f39e32]: Orders
+            - generic [ref=f39e33]: "48"
+          - generic [ref=f39e36]:
+            - link "All orders" [ref=f39e37] [cursor=pointer]:
+              - /url: /orders
+            - link "Drafts8" [ref=f39e38] [cursor=pointer]:
+              - /url: /draft-orders
+            - link "Abandoned checkouts" [ref=f39e39] [cursor=pointer]:
+              - /url: /abandoned-checkouts
+        - generic [ref=f39e40]:
+          - button "Products" [expanded] [ref=f39e41]
+          - generic [ref=f39e48]:
+            - link "All products" [ref=f39e49] [cursor=pointer]:
+              - /url: /products
+            - link "Collections" [ref=f39e50] [cursor=pointer]:
+              - /url: /collections
+            - link "Inventory" [ref=f39e51] [cursor=pointer]:
+              - /url: /inventory
+            - link "Transfers" [ref=f39e52] [cursor=pointer]:
+              - /url: /inventory/transfers
+            - link "Gift cards" [ref=f39e53] [cursor=pointer]:
+              - /url: /gift-cards
+            - link "Locations" [ref=f39e54] [cursor=pointer]:
+              - /url: /locations
+        - button "Customers" [ref=f39e56]
+        - button "Content" [ref=f39e66]
+        - link "Marketing" [ref=f39e73] [cursor=pointer]:
+          - /url: /marketing
+        - link "Discounts" [ref=f39e78] [cursor=pointer]:
+          - /url: /discounts
+        - link "Analytics" [ref=f39e83] [cursor=pointer]:
+          - /url: /analytics
+        - link "Finances" [ref=f39e87] [cursor=pointer]:
+          - /url: /finances/payouts
+        - button "Online Store" [ref=f39e94]
+        - link "Apps" [ref=f39e101] [cursor=pointer]:
+          - /url: /apps
+      - generic [ref=f39e108]:
+        - link "Settings" [ref=f39e109] [cursor=pointer]:
+          - /url: /settings
+        - generic [ref=f39e113]:
+          - generic [ref=f39e114]: AC
+          - generic [ref=f39e115]:
+            - paragraph [ref=f39e116]: Ava Chen
+            - paragraph [ref=f39e117]: ava@northstargoods.com
+    - generic [ref=f39e118]:
+      - banner [ref=f39e119]:
+        - button "Open search" [ref=f39e120]:
+          - generic [ref=f39e124]: Search
+          - generic [ref=f39e125]: ⌘K
+        - generic [ref=f39e126]:
+          - generic [ref=f39e127]: Demo data
+          - button "Help" [ref=f39e132]
+          - button "Notifications (3 unread)" [ref=f39e138]:
+            - generic [ref=f39e142]: "3"
+          - button "Account menu" [ref=f39e144]:
+            - generic [ref=f39e145]: AC
+      - main [ref=f39e148]:
+        - generic [ref=f39e181]:
+          - generic [ref=f39e183]:
+            - generic [ref=f39e184]:
+              - heading "Dashboard" [level=1] [ref=f39e185]
+              - generic [ref=f39e186]: Welcome back — here's how last 30 days compares with the previous period.
+            - button "Last 30 days" [ref=f39e190]
+          - generic [ref=f39e196]:
+            - generic [ref=f39e197]:
+              - paragraph [ref=f39e198]: Total sales
+              - paragraph [ref=f39e199]: $608.68
+              - paragraph [ref=f39e200]:
+                - generic [ref=f39e201]: 46.3%
+                - generic [ref=f39e205]: vs previous period
+            - generic [ref=f39e206]:
+              - paragraph [ref=f39e207]: Net sales
+              - paragraph [ref=f39e208]: $591.64
+              - paragraph [ref=f39e209]:
+                - generic [ref=f39e210]: 46.3%
+                - generic [ref=f39e214]: vs previous period
+            - generic [ref=f39e215]:
+              - paragraph [ref=f39e216]: Orders
+              - paragraph [ref=f39e217]: "8"
+              - paragraph [ref=f39e218]:
+                - generic [ref=f39e219]: 33.3%
+                - generic [ref=f39e223]: vs previous period
+            - generic [ref=f39e224]:
+              - paragraph [ref=f39e225]: Average order value
+              - paragraph [ref=f39e226]: $76.09
+              - paragraph [ref=f39e227]:
+                - generic [ref=f39e228]: 19.5%
+                - generic [ref=f39e232]: vs previous period
+            - generic [ref=f39e233]:
+              - paragraph [ref=f39e234]: Returning customer rate
+              - paragraph [ref=f39e235]: 75.0%
+              - paragraph [ref=f39e236]:
+                - generic [ref=f39e237]: 25.0pp
+                - generic [ref=f39e241]: vs previous period
+          - generic [ref=f39e242]:
+            - generic [ref=f39e244]:
+              - generic [ref=f39e246]:
+                - heading "Sales over time" [level=2] [ref=f39e247]
+                - generic [ref=f39e248]: Last 30 days · 17 units sold
+              - img [ref=f39e252]:
+                - generic [ref=f39e256]:
+                  - generic [ref=f39e257]: Aug 12
+                  - generic [ref=f39e259]: Aug 16
+                  - generic [ref=f39e261]: Aug 20
+                  - generic [ref=f39e263]: Aug 24
+                  - generic [ref=f39e265]: Aug 28
+                  - generic [ref=f39e267]: Sep 1
+                  - generic [ref=f39e269]: Sep 4
+                  - generic [ref=f39e271]: Sep 10
+                - generic [ref=f39e274]:
+                  - generic [ref=f39e275]: $0
+                  - generic [ref=f39e277]: $35
+                  - generic [ref=f39e279]: $70
+                  - generic [ref=f39e281]: $105
+                  - generic [ref=f39e283]: $140
+            - generic [ref=f39e289]:
+              - heading "Sales by channel" [level=2] [ref=f39e292]
+              - generic [ref=f39e293]:
+                - generic [ref=f39e294]:
+                  - generic [ref=f39e295]:
+                    - generic [ref=f39e296]: Online Store
+                    - generic [ref=f39e297]: $430.26
+                  - paragraph [ref=f39e300]: 5 orders · 71% of sales
+                - generic [ref=f39e301]:
+                  - generic [ref=f39e302]:
+                    - generic [ref=f39e303]: Point of Sale
+                    - generic [ref=f39e304]: $178.42
+                  - paragraph [ref=f39e307]: 3 orders · 29% of sales
+                - generic [ref=f39e308]:
+                  - generic [ref=f39e309]:
+                    - generic [ref=f39e310]: Conversion rate
+                    - generic [ref=f39e311]: 3.0%
+                  - paragraph [ref=f39e312]: Sessions are simulated; conversion is indicative only.
+            - generic [ref=f39e313]:
+              - generic [ref=f39e314]:
+                - generic [ref=f39e315]:
+                  - heading "Top products" [level=2] [ref=f39e316]
+                  - generic [ref=f39e317]: By sales in period
+                - link "View all" [ref=f39e319] [cursor=pointer]:
+                  - /url: /products
+              - list [ref=f39e320]:
+                - listitem [ref=f39e321]:
+                  - link "1 Woven Canvas Belt $165.30 6 units" [ref=f39e322] [cursor=pointer]:
+                    - /url: /products/p_woven-belt
+                    - generic [ref=f39e323]: "1"
+                    - generic [ref=f39e324]: Woven Canvas Belt
+                    - generic [ref=f39e325]:
+                      - generic [ref=f39e326]: $165.30
+                      - text: 6 units
+                - listitem [ref=f39e327]:
+                  - link "2 Brass Task Lamp $92.00 1 units" [ref=f39e328] [cursor=pointer]:
+                    - /url: /products/p_desk-lamp
+                    - generic [ref=f39e329]: "2"
+                    - generic [ref=f39e330]: Brass Task Lamp
+                    - generic [ref=f39e331]:
+                      - generic [ref=f39e332]: $92.00
+                      - text: 1 units
+                - listitem [ref=f39e333]:
+                  - link "3 Waterproof Picnic Blanket $83.60 2 units" [ref=f39e334] [cursor=pointer]:
+                    - /url: /products/p_picnic-blanket
+                    - generic [ref=f39e335]: "3"
+                    - generic [ref=f39e336]: Waterproof Picnic Blanket
+                    - generic [ref=f39e337]:
+                      - generic [ref=f39e338]: $83.60
+                      - text: 2 units
+                - listitem [ref=f39e339]:
+                  - link "4 Minimal Sneakers $80.10 1 units" [ref=f39e340] [cursor=pointer]:
+                    - /url: /products/p_minimal-sneakers
+                    - generic [ref=f39e341]: "4"
+                    - generic [ref=f39e342]: Minimal Sneakers
+                    - generic [ref=f39e343]:
+                      - generic [ref=f39e344]: $80.10
+                      - text: 1 units
+                - listitem [ref=f39e345]:
+                  - link "5 Kids Organic Tee $36.00 2 units" [ref=f39e346] [cursor=pointer]:
+                    - /url: /products/p_kids-organic-tee
+                    - generic [ref=f39e347]: "5"
+                    - generic [ref=f39e348]: Kids Organic Tee
+                    - generic [ref=f39e349]:
+                      - generic [ref=f39e350]: $36.00
+                      - text: 2 units
+                - listitem [ref=f39e351]:
+                  - link "6 Kids Fleece Pullover $30.60 1 units" [ref=f39e352] [cursor=pointer]:
+                    - /url: /products/p_kids-fleece-pullover
+                    - generic [ref=f39e353]: "6"
+                    - generic [ref=f39e354]: Kids Fleece Pullover
+                    - generic [ref=f39e355]:
+                      - generic [ref=f39e356]: $30.60
+                      - text: 1 units
+            - generic [ref=f39e357]:
+              - generic [ref=f39e358]:
+                - heading "Recent orders" [level=2] [ref=f39e360]
+                - link "View all" [ref=f39e362] [cursor=pointer]:
+                  - /url: /orders
+              - list [ref=f39e363]:
+                - listitem [ref=f39e364]:
+                  - link "#1122 Rowan Bennett2d ago Refunded Returned $117.83" [ref=f39e365] [cursor=pointer]:
+                    - /url: /orders/o_1122
+                    - generic [ref=f39e366]: "#1122"
+                    - generic: Rowan Bennett2d ago
+                    - generic [ref=f39e367]:
+                      - generic [ref=f39e368]: Refunded
+                      - generic [ref=f39e369]: Returned
+                      - generic [ref=f39e370]: $117.83
+                - listitem [ref=f39e371]:
+                  - link "#1121 Diego Larsen4d ago Paid Fulfilled $99.14" [ref=f39e372] [cursor=pointer]:
+                    - /url: /orders/o_1121
+                    - generic [ref=f39e373]: "#1121"
+                    - generic [ref=f39e374]: Diego Larsen4d ago
+                    - generic [ref=f39e375]:
+                      - generic [ref=f39e376]: Paid
+                      - generic [ref=f39e377]: Fulfilled
+                      - generic [ref=f39e378]: $99.14
+                - listitem [ref=f39e379]:
+                  - link "#1120 Marcus Ibrahim7d ago Paid Fulfilled $91.66" [ref=f39e380] [cursor=pointer]:
+                    - /url: /orders/o_1120
+                    - generic [ref=f39e381]: "#1120"
+                    - generic [ref=f39e382]: Marcus Ibrahim7d ago
+                    - generic [ref=f39e383]:
+                      - generic [ref=f39e384]: Paid
+                      - generic [ref=f39e385]: Fulfilled
+                      - generic [ref=f39e386]: $91.66
+                - listitem [ref=f39e387]:
+                  - link "#1119 Isla Lindqvist8d ago Voided Unfulfilled $155.91" [ref=f39e388] [cursor=pointer]:
+                    - /url: /orders/o_1119
+                    - generic [ref=f39e389]: "#1119"
+                    - generic [ref=f39e390]: Isla Lindqvist8d ago
+                    - generic [ref=f39e391]:
+                      - generic [ref=f39e392]: Voided
+                      - generic [ref=f39e393]: Unfulfilled
+                      - generic [ref=f39e394]: $155.91
+                - listitem [ref=f39e395]:
+                  - link "#1118 Zoe Castellano12d ago Paid Fulfilled $22.27" [ref=f39e396] [cursor=pointer]:
+                    - /url: /orders/o_1118
+                    - generic [ref=f39e397]: "#1118"
+                    - generic [ref=f39e398]: Zoe Castellano12d ago
+                    - generic [ref=f39e399]:
+                      - generic [ref=f39e400]: Paid
+                      - generic [ref=f39e401]: Fulfilled
+                      - generic [ref=f39e402]: $22.27
+                - listitem [ref=f39e403]:
+                  - link "#1117 Dmitri Novak14d ago Paid Fulfilled $29.38" [ref=f39e404] [cursor=pointer]:
+                    - /url: /orders/o_1117
+                    - generic [ref=f39e405]: "#1117"
+                    - generic [ref=f39e406]: Dmitri Novak14d ago
+                    - generic [ref=f39e407]:
+                      - generic [ref=f39e408]: Paid
+                      - generic [ref=f39e409]: Fulfilled
+                      - generic [ref=f39e410]: $29.38
+            - generic [ref=f39e411]:
+              - generic [ref=f39e412]:
+                - generic [ref=f39e413]:
+                  - heading "Inventory alerts" [level=2] [ref=f39e414]
+                  - generic [ref=f39e415]: 8 units or fewer available
+                - link "Inventory" [ref=f39e417] [cursor=pointer]:
+                  - /url: /inventory
+              - list [ref=f39e418]:
+                - listitem [ref=f39e419]:
+                  - link "Classic Cotton T-Shirt Olive / XL · CCT10-OLIV-XL Out of stock" [ref=f39e420] [cursor=pointer]:
+                    - /url: /inventory?q=CCT10-OLIV-XL
+                    - generic [ref=f39e423]:
+                      - generic [ref=f39e424]: Classic Cotton T-Shirt
+                      - generic [ref=f39e425]: Olive / XL · CCT10-OLIV-XL
+                    - generic [ref=f39e426]: Out of stock
+                - listitem [ref=f39e427]:
+                  - link "Minimal Sneakers Slate / 10 · MS13-SLAT-10 Out of stock" [ref=f39e428] [cursor=pointer]:
+                    - /url: /inventory?q=MS13-SLAT-10
+                    - generic [ref=f39e431]:
+                      - generic [ref=f39e432]: Minimal Sneakers
+                      - generic [ref=f39e433]: Slate / 10 · MS13-SLAT-10
+                    - generic [ref=f39e434]: Out of stock
+                - listitem [ref=f39e435]:
+                  - link "Ceramic Coffee Mug Ink Blue · CCM14-INKB Out of stock" [ref=f39e436] [cursor=pointer]:
+                    - /url: /inventory?q=CCM14-INKB
+                    - generic [ref=f39e439]:
+                      - generic [ref=f39e440]: Ceramic Coffee Mug
+                      - generic [ref=f39e441]: Ink Blue · CCM14-INKB
+                    - generic [ref=f39e442]: Out of stock
+                - listitem [ref=f39e443]:
+                  - link "Running Cap Highlight Yellow · RC17-HIGH Out of stock" [ref=f39e444] [cursor=pointer]:
+                    - /url: /inventory?q=RC17-HIGH
+                    - generic [ref=f39e447]:
+                      - generic [ref=f39e448]: Running Cap
+                      - generic [ref=f39e449]: Highlight Yellow · RC17-HIGH
+                    - generic [ref=f39e450]: Out of stock
+                - listitem [ref=f39e451]:
+                  - link "Waterproof Picnic Blanket Juniper · PB33-JUNI Out of stock" [ref=f39e452] [cursor=pointer]:
+                    - /url: /inventory?q=PB33-JUNI
+                    - generic [ref=f39e455]:
+                      - generic [ref=f39e456]: Waterproof Picnic Blanket
+                      - generic [ref=f39e457]: Juniper · PB33-JUNI
+                    - generic [ref=f39e458]: Out of stock
+                - listitem [ref=f39e459]:
+                  - link "Packable Rain Jacket Moss / XL · PRJ40-MOSS-XL Out of stock" [ref=f39e460] [cursor=pointer]:
+                    - /url: /inventory?q=PRJ40-MOSS-XL
+                    - generic [ref=f39e463]:
+                      - generic [ref=f39e464]: Packable Rain Jacket
+                      - generic [ref=f39e465]: Moss / XL · PRJ40-MOSS-XL
+                    - generic [ref=f39e466]: Out of stock
+            - generic [ref=f39e467]:
+              - generic [ref=f39e469]:
+                - heading "Setup guide" [level=2] [ref=f39e470]
+                - generic [ref=f39e471]: 3 remaining
+              - list [ref=f39e472]:
+                - listitem [ref=f39e473]:
+                  - switch [checked] [active] [ref=f39e475]
+                  - generic [ref=f39e477]:
+                    - paragraph [ref=f39e478]: Add your first custom domain
+                    - paragraph [ref=f39e479]: Point northstargoods.com at your store.
+                    - link "Open" [ref=f39e480] [cursor=pointer]:
+                      - /url: /settings
+                - listitem [ref=f39e481]:
+                  - switch [checked] [ref=f39e483]
+                  - generic [ref=f39e485]:
+                    - paragraph [ref=f39e486]: Set up abandoned checkout recovery
+                    - paragraph [ref=f39e487]: Automatically email shoppers who leave items behind.
+                    - link "Open" [ref=f39e488] [cursor=pointer]:
+                      - /url: /settings/checkout
+                - listitem [ref=f39e489]:
+                  - switch [ref=f39e491]
+                  - generic [ref=f39e493]:
+                    - paragraph [ref=f39e494]: Publish 3 more collections
+                    - paragraph [ref=f39e495]: Stores with 8+ collections convert 12% better.
+                    - link "Open" [ref=f39e496] [cursor=pointer]:
+                      - /url: /collections
+                - listitem [ref=f39e497]:
+                  - switch [ref=f39e499]
+                  - generic [ref=f39e501]:
+                    - paragraph [ref=f39e502]: Name a backup staff member
+                    - paragraph [ref=f39e503]: Give an admin fallback fulfillment permissions.
+                    - link "Open" [ref=f39e504] [cursor=pointer]:
+                      - /url: /settings/users
+                - listitem [ref=f39e505]:
+                  - switch [ref=f39e507]
+                  - generic [ref=f39e509]:
+                    - paragraph [ref=f39e510]: Review your tax settings
+                    - paragraph [ref=f39e511]: Confirm rates before the next filing period.
+                    - link "Open" [ref=f39e512] [cursor=pointer]:
+                      - /url: /settings/taxes
+  - generic [ref=f39e513]: $0

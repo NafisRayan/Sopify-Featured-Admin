@@ -1,0 +1,69 @@
+- generic [ref=f10e3]:
+  - navigation "Main navigation" [ref=f10e4]:
+    - button "Northstar Goods Demo store" [ref=f10e8]:
+      - generic [ref=f10e15]:
+        - generic [ref=f10e16]: Northstar Goods
+        - generic [ref=f10e17]: Demo store
+    - generic [ref=f10e20]:
+      - link "Home" [ref=f10e21] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f10e26]:
+        - button "Orders 48" [expanded] [ref=f10e27]:
+          - generic [ref=f10e32]: Orders
+          - generic [ref=f10e33]: "48"
+        - generic [ref=f10e36]:
+          - link "All orders" [ref=f10e37] [cursor=pointer]:
+            - /url: /orders
+          - link "Drafts8" [ref=f10e38] [cursor=pointer]:
+            - /url: /draft-orders
+          - link "Abandoned checkouts" [ref=f10e39] [cursor=pointer]:
+            - /url: /abandoned-checkouts
+      - generic [ref=f10e40]:
+        - button "Products" [expanded] [ref=f10e41]
+        - generic [ref=f10e48]:
+          - link "All products" [ref=f10e49] [cursor=pointer]:
+            - /url: /products
+          - link "Collections" [ref=f10e50] [cursor=pointer]:
+            - /url: /collections
+          - link "Inventory" [ref=f10e51] [cursor=pointer]:
+            - /url: /inventory
+          - link "Transfers" [ref=f10e52] [cursor=pointer]:
+            - /url: /inventory/transfers
+          - link "Gift cards" [ref=f10e53] [cursor=pointer]:
+            - /url: /gift-cards
+          - link "Locations" [ref=f10e54] [cursor=pointer]:
+            - /url: /locations
+      - button "Customers" [ref=f10e56]
+      - button "Content" [ref=f10e66]
+      - link "Marketing" [ref=f10e73] [cursor=pointer]:
+        - /url: /marketing
+      - link "Discounts" [ref=f10e78] [cursor=pointer]:
+        - /url: /discounts
+      - link "Analytics" [ref=f10e83] [cursor=pointer]:
+        - /url: /analytics
+      - link "Finances" [ref=f10e87] [cursor=pointer]:
+        - /url: /finances/payouts
+      - button "Online Store" [ref=f10e94]
+      - link "Apps" [ref=f10e101] [cursor=pointer]:
+        - /url: /apps
+    - generic [ref=f10e108]:
+      - link "Settings" [ref=f10e109] [cursor=pointer]:
+        - /url: /settings
+      - generic [ref=f10e113]:
+        - generic [ref=f10e114]: AC
+        - generic [ref=f10e115]:
+          - paragraph [ref=f10e116]: Ava Chen
+          - paragraph [ref=f10e117]: ava@northstargoods.com
+  - generic [ref=f10e118]:
+    - banner [ref=f10e119]:
+      - button "Open search" [ref=f10e120]:
+        - generic [ref=f10e124]: Search
+        - generic [ref=f10e125]: ⌘K
+      - generic [ref=f10e126]:
+        - generic [ref=f10e127]: Demo data
+        - button "Help" [ref=f10e132]
+        - button "Notifications (3 unread)" [ref=f10e138]:
+          - generic [ref=f10e142]: "3"
+        - button "Account menu" [ref=f10e144]:
+          - generic [ref=f10e145]: AC
+    - main [ref=f10e148]

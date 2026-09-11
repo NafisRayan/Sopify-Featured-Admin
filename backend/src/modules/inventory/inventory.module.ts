@@ -110,7 +110,7 @@ export class InventoryService {
     if (!input.lines.length) throw new Error('Add at least one item')
     const lines = []
     for (const line of input.lines) {
-      const product = await this.prisma.product.findFirst({ where: { variants: { path: ['$'], array_contains: [{ id: line.variantId }] } } })
+      const product = await this.prisma.product.findFirst({ where: { variants: { array_contains: [{ id: line.variantId }] } } })
       if (!product) throw new Error('Invalid variant')
       const variant = parseJson<{ id: string; sku: string; title: string }[]>(product.variants as string, []).find((v) => v.id === line.variantId)!
       lines.push({ id: uid('itl'), variantId: line.variantId, sku: variant.sku, title: product.title, variantTitle: variant.title === 'Default Title' ? '' : variant.title, quantity: line.quantity, receivedQuantity: 0 })
@@ -137,6 +137,13 @@ export class InventoryService {
     if (!t) throw new Error('Transfer not found')
     if (t.status !== 'draft') throw new Error('Transfer already sent')
     const lines = parseJson<{ variantId: string; quantity: number }[]>(t.lines as string, [])
+    // validate source stock before moving anything
+    for (const line of lines) {
+      const level = await this.prisma.inventoryLevel.findUnique({ where: { variantId_locationId: { variantId: line.variantId, locationId: t.fromLocationId } } })
+      if ((level?.available ?? 0) < line.quantity) {
+        throw new Error(`Insufficient stock at source location (has ${level?.available ?? 0}, needs ${line.quantity})`)
+      }
+    }
     for (const line of lines) {
       const level = await this.prisma.inventoryLevel.findUnique({ where: { variantId_locationId: { variantId: line.variantId, locationId: t.fromLocationId } } })
       const available = Math.max(0, (level?.available ?? 0) - line.quantity)

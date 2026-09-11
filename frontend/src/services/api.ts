@@ -41,11 +41,41 @@ export function syncMutation(mutation: string): void {
 
 const SNAPSHOT_QUERY = `{
   bootstrap {
-    products customers orders abandonedCheckouts collections locations inventoryLevels
-    inventoryHistory discounts campaigns staff pages blogPosts files menus apps
-    notifications tasks theme themeLibrary companies segments transfers giftCards
-    payouts balanceTransactions metafieldDefinitions metafields redirects locales
-    markets activity returns orderEdits plan
+    products { id title descriptionHtml vendor productType category status tags collectionIds channels options { name values } variants { id productId title sku barcode price compareAtPrice costPerItem optionValues weightGrams imageId available } media { id productId type src alt } seo { title description handle } weightGrams requiresShipping trackQuantity createdAt updatedAt totalInventory }
+    customers { id firstName lastName email phone defaultAddress { firstName lastName address1 address2 city province country zip phone company } addresses { firstName lastName address1 address2 city province country zip phone company } tags note emailMarketingConsent taxExempt createdAt ordersCount totalSpent lastOrderAt }
+    orders { id name customerId email phone createdAt cancelledAt closedAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice discountCode { code amount } subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals }
+    abandonedCheckouts { id customerId email createdAt lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } total recoveryStatus }
+    collections { id title descriptionHtml imageSrc handle type rules { column relation condition } rulesMatch productIds status seoTitle seoDescription publishedAt createdAt }
+    locations { id name address1 city province country zip phone active createdAt }
+    inventoryLevels { variantId locationId available committed unavailable onHand }
+    inventoryHistory { id variantId locationId change resultingAvailable reason createdAt author }
+    discounts { id code title type method value bxgy { customerBuysQuantity customerBuysAmount customerGetsQuantity customerGetsDiscountPercent } minPurchase customerEligibility productEligibility productIds usageLimit usedCount startsAt endsAt status combinations { orderDiscounts productDiscounts shippingDiscounts } }
+    campaigns { id name channel status sentAt audience reached sessions orders revenue cost }
+    staff { id name email role status lastActiveAt permissions }
+    pages { id title contentHtml handle status seoTitle seoDescription createdAt updatedAt }
+    blogPosts { id title author excerpt contentHtml imageSrc tags status publishedAt }
+    files { id name type src sizeKb dimensions uploadedAt alt }
+    menus { id title handle items { id title url children { id title url children { id title url children { id title url } } } } }
+    apps { id name description iconBg iconChar status permissions category suggested }
+    notifications { id kind title body createdAt read link }
+    tasks { id title description done link }
+    theme { activeTheme value }
+    themeLibrary { id name version role imageSrc addedAt }
+    companies { id name externalId status customerId note locations { id name phone address { firstName lastName address1 address2 city province country zip phone company } taxExempt } contacts { id name email phone locationIds isPrimary } priceListDiscountPercent createdAt totalSpent }
+    segments { id name description filters { column relation value } createdAt memberCount }
+    transfers { id name status fromLocationId toLocationId lines { id variantId sku title variantTitle quantity receivedQuantity } createdAt sentAt receivedAt note }
+    giftCards { id code customerId initialBalance balance currency status expiresAt note createdAt history { id at type amount note } }
+    payouts { id status amount currency issuedAt arrivedAt bankAccount }
+    balanceTransactions { id at type amount fee net orderId description payoutId }
+    metafieldDefinitions { id namespace key name type description resourceType }
+    metafields { id ownerType ownerId definitionId value }
+    redirects { id from to createdAt }
+    locales { code name isDefault published }
+    markets { code name currency priceAdjustmentPercent enabled }
+    activity { id at staffId staffName action resource resourceId }
+    returns { id orderId status lines { lineItemId quantity } reason restock refundAmount createdAt closedAt }
+    orderEdits
+    plan { name status trialDaysLeft storeId }
     settings { value }
   }
 }`
