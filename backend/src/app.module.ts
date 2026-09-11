@@ -11,6 +11,7 @@ import { InventoryModule } from './modules/inventory/inventory.module'
 import { CommerceModule } from './modules/commerce/commerce.module'
 import { FinancesModule } from './modules/finances/finances.module'
 import { StoreContentModule } from './modules/store-content/store-content.module'
+import { UploadsModule } from './modules/uploads/uploads.module'
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { StoreContentModule } from './modules/store-content/store-content.module
     CommerceModule,
     FinancesModule,
     StoreContentModule,
+    UploadsModule,
   ],
 })
 export class AppModule {}

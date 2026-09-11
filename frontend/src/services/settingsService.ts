@@ -1,6 +1,6 @@
 import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
-import { syncMutation } from './api'
+import { syncMutation, gqlLiteral } from './api'
 import { delay } from '@/lib/delay'
 import type {
   StoreSettings, PaymentProvider, ShippingRate, StaffMember, PermissionResource,
@@ -14,7 +14,7 @@ export async function updateStoreSettings(patch: Partial<StoreSettings>): Promis
   await delay(350)
   getStore().updateSettings(patch)
   const current = getStore().settings
-  syncMutation(`mutation { settingsUpdate(value: ${JSON.stringify({ ...current, ...patch })}) { storeName } }`)
+  syncMutation(`mutation { settingsUpdate(value: ${gqlLiteral({ ...current, ...patch })}) { storeName } }`)
 }
 
 export async function togglePaymentProvider(id: string): Promise<void> {
@@ -187,7 +187,7 @@ export async function markAllNotificationsRead(): Promise<void> {
 
 export async function toggleTask(id: string): Promise<void> {
   getStore().toggleTask(id)
-  syncMutation(`mutation { taskToggle(id: ${JSON.stringify(id)}) { storeName } }`)
+  syncMutation(`mutation { taskToggle(id: ${gqlLiteral(id)}) { storeName } }`)
 }
 
 /** Dev utility (spec §38): wipe localStorage changes and re-hydrate seeds */

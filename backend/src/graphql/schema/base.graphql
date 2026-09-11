@@ -242,15 +242,15 @@ type CollectionProductsPayload {
 # ─── Customers ──────────────────────────────────────────────────────────────
 
 type Address {
-  firstName: String!
-  lastName: String!
+  firstName: String
+  lastName: String
   company: String
-  address1: String!
+  address1: String
   address2: String
-  city: String!
-  province: String!
-  country: String!
-  zip: String!
+  city: String
+  province: String
+  country: String
+  zip: String
   phone: String
 }
 

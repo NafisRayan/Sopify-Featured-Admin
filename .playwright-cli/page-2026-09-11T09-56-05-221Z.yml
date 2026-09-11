@@ -1,0 +1,172 @@
+- generic [ref=f1e3]:
+  - navigation "Main navigation" [ref=f1e4]:
+    - button "Northstar Goods Demo store" [ref=f1e8]:
+      - generic [ref=f1e15]:
+        - generic [ref=f1e16]: Northstar Goods
+        - generic [ref=f1e17]: Demo store
+    - generic [ref=f1e20]:
+      - link "Home" [ref=f1e21] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f1e26]:
+        - button "Orders 48" [expanded] [ref=f1e27]:
+          - generic [ref=f1e32]: Orders
+          - generic [ref=f1e33]: "48"
+        - generic [ref=f1e36]:
+          - link "All orders" [ref=f1e37] [cursor=pointer]:
+            - /url: /orders
+          - link "Drafts9" [ref=f1e828] [cursor=pointer]:
+            - /url: /draft-orders
+          - link "Abandoned checkouts" [ref=f1e39] [cursor=pointer]:
+            - /url: /abandoned-checkouts
+      - generic [ref=f1e40]:
+        - button "Products" [expanded] [ref=f1e41]
+        - generic [ref=f1e48]:
+          - link "All products" [ref=f1e49] [cursor=pointer]:
+            - /url: /products
+          - link "Collections" [ref=f1e50] [cursor=pointer]:
+            - /url: /collections
+          - link "Inventory" [ref=f1e51] [cursor=pointer]:
+            - /url: /inventory
+          - link "Transfers" [ref=f1e52] [cursor=pointer]:
+            - /url: /inventory/transfers
+          - link "Gift cards" [ref=f1e53] [cursor=pointer]:
+            - /url: /gift-cards
+          - link "Locations" [ref=f1e54] [cursor=pointer]:
+            - /url: /locations
+      - button "Customers" [ref=f1e56]
+      - button "Content" [ref=f1e66]
+      - link "Marketing" [ref=f1e73] [cursor=pointer]:
+        - /url: /marketing
+      - link "Discounts" [ref=f1e78] [cursor=pointer]:
+        - /url: /discounts
+      - link "Analytics" [ref=f1e83] [cursor=pointer]:
+        - /url: /analytics
+      - link "Finances" [ref=f1e87] [cursor=pointer]:
+        - /url: /finances/payouts
+      - button "Online Store" [ref=f1e94]
+      - link "Apps" [ref=f1e101] [cursor=pointer]:
+        - /url: /apps
+    - generic [ref=f1e108]:
+      - link "Settings" [ref=f1e109] [cursor=pointer]:
+        - /url: /settings
+      - generic [ref=f1e113]:
+        - generic [ref=f1e114]: AC
+        - generic [ref=f1e115]:
+          - paragraph [ref=f1e116]: Ava Chen
+          - paragraph [ref=f1e117]: ava@northstargoods.com
+  - generic [ref=f1e118]:
+    - banner [ref=f1e119]:
+      - button "Open search" [ref=f1e120]:
+        - generic [ref=f1e124]: Search
+        - generic [ref=f1e125]: ⌘K
+      - generic [ref=f1e126]:
+        - generic [ref=f1e127]: Demo data
+        - button "Help" [ref=f1e132]
+        - button "Notifications (3 unread)" [ref=f1e138]:
+          - generic [ref=f1e142]: "3"
+        - button "Account menu" [ref=f1e144]:
+          - generic [ref=f1e145]: AC
+    - main [ref=f1e148]:
+      - generic [ref=f1e829]:
+        - generic [ref=f1e830]:
+          - button "Drafts" [ref=f1e831]
+          - generic [ref=f1e834]:
+            - generic [ref=f1e835]:
+              - heading [level=1] [ref=f1e836]:
+                - generic [ref=f1e837]:
+                  - text: "#D742"
+                  - generic [ref=f1e838]: Draft
+              - generic [ref=f1e840]: Sep 11, 2026, 3:56 PM from Online Store
+            - generic [ref=f1e841]:
+              - button "More actions" [ref=f1e843]
+              - generic [ref=f1e848]:
+                - button "Convert to order" [ref=f1e849]
+                - button "Send invoice" [ref=f1e851]
+                - button "Collect payment" [ref=f1e853]
+        - generic [ref=f1e855]:
+          - generic [ref=f1e856]:
+            - generic [ref=f1e857]:
+              - heading "1 item" [level=2] [ref=f1e860]
+              - list [ref=f1e861]:
+                - listitem [ref=f1e862]:
+                  - generic [ref=f1e863]:
+                    - link "Classic Cotton T-Shirt" [ref=f1e864] [cursor=pointer]:
+                      - /url: /products/p_classic-cotton-t-shirt
+                    - paragraph [ref=f1e865]: Black / S
+                    - paragraph [ref=f1e866]: $24.00 × 1 · CCT10-BLAC-S
+                  - generic [ref=f1e867]: $24.00
+              - generic [ref=f1e869]:
+                - generic [ref=f1e870]:
+                  - term [ref=f1e871]: Subtotal · 1 items
+                  - definition [ref=f1e872]: $24.00
+                - generic [ref=f1e873]:
+                  - term [ref=f1e874]: Standard shipping
+                  - definition [ref=f1e875]: $6.99
+                - generic [ref=f1e876]:
+                  - term [ref=f1e877]: Tax
+                  - definition [ref=f1e878]: $1.92
+                - generic [ref=f1e879]:
+                  - term [ref=f1e880]: Total
+                  - definition [ref=f1e881]: $32.91 USD
+                - generic [ref=f1e882]:
+                  - term [ref=f1e883]: Net
+                  - definition [ref=f1e884]: $32.91
+            - generic [ref=f1e885]:
+              - generic [ref=f1e887]:
+                - heading "Timeline" [level=2] [ref=f1e888]
+                - generic [ref=f1e889]: Activity on this order
+              - generic [ref=f1e890]:
+                - generic [ref=f1e891]:
+                  - textbox "Timeline note" [ref=f1e893]:
+                    - /placeholder: Add a note to the timeline…
+                  - generic [ref=f1e894]:
+                    - generic [ref=f1e895]:
+                      - checkbox "Visible to customer" [checked] [ref=f1e896]
+                      - text: Visible to customer
+                    - button "Post" [disabled] [ref=f1e897]
+                - list [ref=f1e899]:
+                  - listitem [ref=f1e900]:
+                    - generic [ref=f1e902]:
+                      - paragraph [ref=f1e903]: Draft order created
+                      - paragraph [ref=f1e904]: Sep 11, 2026, 3:56 PM · Ava Chen
+          - generic [ref=f1e905]:
+            - generic [ref=f1e906]:
+              - generic [ref=f1e907]:
+                - heading "Customer" [level=2] [ref=f1e909]
+                - link "View profile" [ref=f1e911] [cursor=pointer]:
+                  - /url: /customers/c_100
+              - generic [ref=f1e912]:
+                - generic [ref=f1e913]:
+                  - generic [ref=f1e914]: SA
+                  - generic [ref=f1e915]:
+                    - paragraph [ref=f1e916]: Silas Aldana
+                    - paragraph [ref=f1e917]: 1 orders · $60.99 spent
+                - list [ref=f1e918]:
+                  - listitem [ref=f1e919]:
+                    - generic [ref=f1e923]: silas.aldana@example.com
+            - generic [ref=f1e924]:
+              - heading "Addresses" [level=2] [ref=f1e927]
+              - generic [ref=f1e928]:
+                - generic [ref=f1e929]:
+                  - paragraph [ref=f1e930]: Ship to
+                  - paragraph [ref=f1e934]: Silas Aldana8520 Cedar LnBrooklyn, NY 11201United States
+                - generic [ref=f1e935]:
+                  - paragraph [ref=f1e936]: Billing
+                  - paragraph [ref=f1e937]: Same as shipping address
+                - generic [ref=f1e938]:
+                  - paragraph [ref=f1e939]: Shipping method
+                  - paragraph [ref=f1e940]: Standard shipping · $6.99
+            - generic [ref=f1e941]:
+              - heading "Payment" [level=2] [ref=f1e944]
+              - generic [ref=f1e945]:
+                - generic [ref=f1e946]:
+                  - generic [ref=f1e947]: Gateway
+                  - generic [ref=f1e948]: Shopify Payments
+                - generic [ref=f1e949]:
+                  - generic [ref=f1e950]: Status
+                  - generic [ref=f1e951]: Unpaid
+            - generic [ref=f1e953]:
+              - generic [ref=f1e954]:
+                - heading "Tags" [level=3] [ref=f1e955]
+                - button "Edit" [ref=f1e956]
+              - paragraph [ref=f1e958]: No tags

@@ -1,0 +1,355 @@
+- generic [ref=f7e3]:
+  - navigation "Main navigation" [ref=f7e4]:
+    - button "Northstar Goods Demo store" [ref=f7e8]:
+      - generic [ref=f7e15]:
+        - generic [ref=f7e16]: Northstar Goods
+        - generic [ref=f7e17]: Demo store
+    - generic [ref=f7e20]:
+      - link "Home" [ref=f7e21] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f7e26]:
+        - button "Orders 49" [expanded] [ref=f7e27]:
+          - generic [ref=f7e32]: Orders
+          - generic [ref=f7e33]: "49"
+        - generic [ref=f7e36]:
+          - link "All orders" [ref=f7e37] [cursor=pointer]:
+            - /url: /orders
+          - link "Drafts13" [ref=f7e38] [cursor=pointer]:
+            - /url: /draft-orders
+          - link "Abandoned checkouts" [ref=f7e39] [cursor=pointer]:
+            - /url: /abandoned-checkouts
+      - generic [ref=f7e40]:
+        - button "Products" [expanded] [ref=f7e41]
+        - generic [ref=f7e48]:
+          - link "All products" [ref=f7e49] [cursor=pointer]:
+            - /url: /products
+          - link "Collections" [ref=f7e50] [cursor=pointer]:
+            - /url: /collections
+          - link "Inventory" [ref=f7e51] [cursor=pointer]:
+            - /url: /inventory
+          - link "Transfers" [ref=f7e52] [cursor=pointer]:
+            - /url: /inventory/transfers
+          - link "Gift cards" [ref=f7e53] [cursor=pointer]:
+            - /url: /gift-cards
+          - link "Locations" [ref=f7e54] [cursor=pointer]:
+            - /url: /locations
+      - button "Customers" [ref=f7e56]
+      - button "Content" [ref=f7e66]
+      - link "Marketing" [ref=f7e73] [cursor=pointer]:
+        - /url: /marketing
+      - link "Discounts" [ref=f7e78] [cursor=pointer]:
+        - /url: /discounts
+      - link "Analytics" [ref=f7e83] [cursor=pointer]:
+        - /url: /analytics
+      - link "Finances" [ref=f7e87] [cursor=pointer]:
+        - /url: /finances/payouts
+      - button "Online Store" [ref=f7e94]
+      - link "Apps" [ref=f7e101] [cursor=pointer]:
+        - /url: /apps
+    - generic [ref=f7e108]:
+      - link "Settings" [ref=f7e109] [cursor=pointer]:
+        - /url: /settings
+      - generic [ref=f7e113]:
+        - generic [ref=f7e114]: AC
+        - generic [ref=f7e115]:
+          - paragraph [ref=f7e116]: Ava Chen
+          - paragraph [ref=f7e117]: ava@northstargoods.com
+  - generic [ref=f7e118]:
+    - banner [ref=f7e119]:
+      - button "Open search" [ref=f7e120]:
+        - generic [ref=f7e124]: Search
+        - generic [ref=f7e125]: ⌘K
+      - generic [ref=f7e126]:
+        - generic [ref=f7e127]: Demo data
+        - button "Help" [ref=f7e132]
+        - button "Notifications" [ref=f7e138]
+        - button "Account menu" [ref=f7e143]:
+          - generic [ref=f7e144]: AC
+    - main [ref=f7e147]:
+      - generic [ref=f7e180]:
+        - generic [ref=f7e181]:
+          - button "Pro Yoga Mat 6mm" [ref=f7e182]
+          - generic [ref=f7e185]:
+            - heading "Edit product" [level=1] [ref=f7e187]
+            - generic [ref=f7e188]:
+              - button "Duplicate" [ref=f7e189]
+              - button "Archive" [ref=f7e194]
+              - generic [ref=f7e199]:
+                - button "Preview" [ref=f7e200]
+                - button "Save" [ref=f7e205]
+        - generic [ref=f7e207]:
+          - generic [ref=f7e208]:
+            - generic [ref=f7e209]:
+              - generic [ref=f7e210]:
+                - heading "Title" [level=3] [ref=f7e213]
+                - textbox "Product title" [ref=f7e217]:
+                  - /placeholder: e.g. Classic Cotton T-Shirt
+                  - text: Pro Yoga Mat 6mm
+              - generic [ref=f7e218]:
+                - heading "Description" [level=3] [ref=f7e221]
+                - generic [ref=f7e222]:
+                  - generic [ref=f7e223]:
+                    - button "Bold" [ref=f7e224]
+                    - button "Italic" [ref=f7e227]
+                    - button "Bulleted list" [ref=f7e230]: • List
+                    - button "Numbered list" [ref=f7e231]: 1. List
+                    - button "Insert link" [ref=f7e232]
+                  - paragraph [ref=f7e237]: 6mm natural-rubber mat with an alignment-guiding texture and a non-slip moisture-wicking surface. Includes carry strap.
+              - generic [ref=f7e238]:
+                - generic [ref=f7e240]:
+                  - heading "Media" [level=3] [ref=f7e241]
+                  - generic [ref=f7e242]: First image is the featured image.
+                - generic [ref=f7e243]:
+                  - generic [ref=f7e244]:
+                    - generic [ref=f7e245]:
+                      - img "Pro Yoga Mat 6mm" [ref=f7e246]
+                      - generic [ref=f7e247]: Featured
+                    - img "Pro Yoga Mat 6mm detail" [ref=f7e251]
+                    - img "qa-upload.svg" [ref=f7e253]
+                    - button "Add via URL" [ref=f7e254]
+                    - generic [ref=f7e259] [cursor=pointer]: Upload file
+                  - button "Make second image featured" [ref=f7e263]
+            - generic [ref=f7e265]:
+              - heading "Pricing" [level=2] [ref=f7e268]
+              - generic [ref=f7e270]:
+                - generic [ref=f7e271]:
+                  - generic [ref=f7e272]: Price
+                  - generic [ref=f7e274]:
+                    - generic: $
+                    - spinbutton "Price" [ref=f7e275]: "48"
+                - generic [ref=f7e276]:
+                  - generic [ref=f7e277]: Compare-at price
+                  - generic [ref=f7e279]:
+                    - generic: $
+                    - spinbutton "Compare-at price" [ref=f7e280]
+                  - paragraph [ref=f7e281]: Shown struck-through
+                - generic [ref=f7e282]:
+                  - generic [ref=f7e283]: Cost per item
+                  - generic [ref=f7e285]:
+                    - generic: $
+                    - spinbutton "Cost per item" [ref=f7e286]: "17"
+                  - paragraph [ref=f7e287]: Margin 64.6%
+            - generic [ref=f7e288]:
+              - heading "Inventory" [level=2] [ref=f7e291]
+              - generic [ref=f7e293]:
+                - generic [ref=f7e294]:
+                  - generic [ref=f7e295]:
+                    - generic [ref=f7e296]: Track quantity
+                    - generic [ref=f7e297]: When off, the product is always sellable.
+                  - switch "Track quantity" [checked] [ref=f7e298]
+                - generic [ref=f7e300]:
+                  - generic [ref=f7e301]: Barcode (ISBN, UPC, GTIN)
+                  - textbox "Barcode (ISBN, UPC, GTIN)" [ref=f7e304]: "0848482362475"
+            - generic [ref=f7e305]:
+              - heading "Shipping" [level=2] [ref=f7e308]
+              - generic [ref=f7e310]:
+                - generic [ref=f7e311]:
+                  - generic [ref=f7e312]: Weight
+                  - spinbutton "Weight" [ref=f7e315]: "1100"
+                  - paragraph [ref=f7e316]: Used to calculate shipping rates
+                - generic [ref=f7e317]:
+                  - generic [ref=f7e318]: Physical product
+                  - switch [checked] [ref=f7e320]
+            - generic [ref=f7e322]:
+              - generic [ref=f7e324]:
+                - heading "Variants" [level=2] [ref=f7e325]
+                - generic [ref=f7e326]: 3 variants from 1 options
+              - generic [ref=f7e327]:
+                - generic [ref=f7e328]:
+                  - generic [ref=f7e329]:
+                    - generic [ref=f7e330]:
+                      - generic [ref=f7e331]:
+                        - generic [ref=f7e332]: Option name
+                        - textbox "Option name" [ref=f7e335]:
+                          - /placeholder: e.g. Color
+                          - text: Color
+                      - generic [ref=f7e336]:
+                        - generic [ref=f7e337]: Values (comma-separated)
+                        - textbox "Values (comma-separated)" [ref=f7e340]:
+                          - /placeholder: e.g. Black, White
+                          - text: Moss, Graphite, Blush
+                    - button "Remove option" [ref=f7e342]
+                  - button "Add option (like Size)" [ref=f7e347]
+                - table [ref=f7e351]:
+                  - rowgroup [ref=f7e352]:
+                    - row [ref=f7e353]:
+                      - columnheader "Variant" [ref=f7e354]
+                      - columnheader "SKU" [ref=f7e355]
+                      - columnheader "Price" [ref=f7e356]
+                      - columnheader "Available" [ref=f7e357]
+                      - columnheader "On sale" [ref=f7e358]
+                  - rowgroup [ref=f7e359]:
+                    - row [ref=f7e360]:
+                      - cell [ref=f7e361]:
+                        - button "Moss" [ref=f7e362]
+                      - cell [ref=f7e363]:
+                        - textbox "SKU" [ref=f7e364]: YM18-MOSS
+                      - cell [ref=f7e365]:
+                        - spinbutton "Price" [ref=f7e366]: "48"
+                      - cell [ref=f7e367]:
+                        - button "42" [ref=f7e368]
+                      - cell [ref=f7e369]:
+                        - switch [checked] [ref=f7e371]
+                    - row [ref=f7e373]:
+                      - cell [ref=f7e374]:
+                        - button "Graphite" [ref=f7e375]
+                      - cell [ref=f7e376]:
+                        - textbox "SKU" [ref=f7e377]: YM18-GRAP
+                      - cell [ref=f7e378]:
+                        - spinbutton "Price" [ref=f7e379]: "48"
+                      - cell [ref=f7e380]:
+                        - button "35" [ref=f7e381]
+                      - cell [ref=f7e382]:
+                        - switch [checked] [ref=f7e384]
+                    - row [ref=f7e386]:
+                      - cell [ref=f7e387]:
+                        - button "Blush" [ref=f7e388]
+                      - cell [ref=f7e389]:
+                        - textbox "SKU" [ref=f7e390]: YM18-BLUS
+                      - cell [ref=f7e391]:
+                        - spinbutton "Price" [ref=f7e392]: "48"
+                      - cell [ref=f7e393]:
+                        - button "71" [ref=f7e394]
+                      - cell [ref=f7e395]:
+                        - switch [checked] [ref=f7e397]
+                - paragraph [ref=f7e399]: Changes to options are applied when you save. New variants start with the default price.
+            - generic [ref=f7e400]:
+              - generic [ref=f7e402]:
+                - heading "Search engine listing" [level=2] [ref=f7e403]
+                - generic [ref=f7e404]: How this product appears in search results
+              - generic [ref=f7e406]:
+                - generic [ref=f7e407]:
+                  - generic [ref=f7e408]: Page title
+                  - textbox "Page title" [ref=f7e411]: Pro Yoga Mat 6mm
+                  - paragraph [ref=f7e412]: 16/60 characters
+                - generic [ref=f7e413]:
+                  - generic [ref=f7e414]: URL handle
+                  - textbox "URL handle" [ref=f7e417]: yoga-mat
+                  - paragraph [ref=f7e418]: northstargoods.com/products/yoga-mat
+                - generic [ref=f7e419]:
+                  - generic [ref=f7e420]: Meta description
+                  - textbox "Meta description" [ref=f7e421]: 6mm natural-rubber mat with an alignment-guiding texture and a non-slip moisture-wicking surface. Includes carry strap.
+                  - paragraph [ref=f7e422]: 119/160 characters
+          - generic [ref=f7e423]:
+            - generic [ref=f7e424]:
+              - heading "Status" [level=2] [ref=f7e427]
+              - generic [ref=f7e429]:
+                - generic [ref=f7e430] [cursor=pointer]:
+                  - radio "Draft — hidden from customers" [checked] [ref=f7e431]
+                  - generic [ref=f7e432]: Draft — hidden from customers
+                - generic [ref=f7e433] [cursor=pointer]:
+                  - radio "Active — visible in the store" [ref=f7e434]
+                  - generic [ref=f7e435]: Active — visible in the store
+                - generic [ref=f7e436] [cursor=pointer]:
+                  - radio "Archived" [ref=f7e437]
+                  - generic [ref=f7e438]: Archived
+            - generic [ref=f7e439]:
+              - heading "Product organization" [level=2] [ref=f7e442]
+              - generic [ref=f7e444]:
+                - generic [ref=f7e445]:
+                  - generic [ref=f7e446]: Vendor
+                  - textbox "Vendor" [ref=f7e449]: Northstar Goods
+                - generic [ref=f7e450]:
+                  - generic [ref=f7e451]: Product type
+                  - textbox "Product type" [ref=f7e454]:
+                    - /placeholder: e.g. Apparel
+                    - text: Fitness
+                - generic [ref=f7e455]:
+                  - generic [ref=f7e456]: Category
+                  - combobox "Category" [ref=f7e457] [cursor=pointer]:
+                    - option "Uncategorized"
+                    - option "Home & Garden > Kitchen & Dining > Cookware"
+                    - option "Apparel & Accessories > Luggage > Duffels"
+                    - option "Apparel & Accessories > Clothing Accessories > Scarves"
+                    - option "Apparel & Accessories > Luggage > Toiletry Bags"
+                    - option "Home & Garden > Kitchen & Dining > Drinkware"
+                    - option "Apparel & Accessories > Clothing Accessories > Gloves"
+                    - option "Apparel & Accessories > Clothing > Kids"
+                    - option "Apparel & Accessories > Shoes"
+                    - option "Apparel & Accessories > Clothing > Shirts"
+                    - option "Health & Beauty > Personal Care > Bath"
+                    - option "Home & Garden > Decor > Desk Accessories"
+                    - option "Home & Garden > Decor > Vases"
+                    - option "Apparel & Accessories > Luggage > Backpacks"
+                    - option "Home & Garden > Kitchen & Dining > Aprons"
+                    - option "Apparel & Accessories > Clothing Accessories > Hats"
+                    - option "Home & Garden > Kitchen & Dining > Food Storage"
+                    - option "Apparel & Accessories > Clothing > Hoodies"
+                    - option "Office & School Supplies > Paper > Notebooks"
+                    - option "Apparel & Accessories > Wallets"
+                    - option "Sporting Goods > Outdoor > Camping"
+                    - option "Sporting Goods > Outdoor > Hydration"
+                    - option "Home & Garden > Lighting > Lamps"
+                    - option "Animals & Pet Supplies > Pet Supplies > Dog"
+                    - option "Home & Garden > Lawn & Garden > Tools"
+                    - option "Home & Garden > Kitchen & Dining > Coffee"
+                    - option "Home & Garden > Kitchen & Dining > Serveware"
+                    - option "Apparel & Accessories > Luggage > Totes"
+                    - option "Apparel & Accessories > Clothing Accessories > Socks"
+                    - option "Apparel & Accessories > Luggage > Waist Packs"
+                    - option "Tools & Home Improvement > Hardware"
+                    - option "Sporting Goods > Exercise & Fitness > Yoga" [selected]
+                    - option "Apparel & Accessories > Luggage > Passport Covers"
+                    - option "Home & Garden > Decor > Home Fragrance"
+                    - option "Office & School Supplies > Paper > Postcards"
+                    - option "Home & Garden > Kitchen & Dining > Tea"
+                    - option "Home & Garden > Lawn & Garden > Pots"
+                    - option "Home & Garden > Linens > Blankets"
+                    - option "Sporting Goods > Outdoor > Camp Kitchen"
+                    - option "Apparel & Accessories > Belts"
+                    - option "Home & Garden > Linens > Towels"
+                    - option "Apparel & Accessories > Clothing > Outerwear"
+                    - option "Home & Garden > Kitchen & Dining > Tableware"
+                - generic [ref=f7e458]:
+                  - generic [ref=f7e459]: Collections
+                  - combobox "Collections" [ref=f7e460] [cursor=pointer]:
+                    - option "Add to collection…" [selected]
+                    - option "Apparel"
+                    - option "Archive Sale"
+                    - option "Bestsellers"
+                    - option "Gift Guide"
+                    - option "Home Goods"
+                    - option "Kitchen & Dining"
+                    - option "Leather Goods"
+                    - option "Made in Portland"
+                    - option "New Arrivals"
+                    - option "Office & Desk"
+                    - option "Outdoor & Travel"
+                    - option "Stationery"
+                - button "Remove from Bestsellers" [ref=f7e462]: Bestsellers ×
+                - generic [ref=f7e463]:
+                  - generic [ref=f7e464]: Tags
+                  - generic [ref=f7e465]:
+                    - generic [ref=f7e466]:
+                      - generic [ref=f7e467]:
+                        - text: limited
+                        - button "Remove tag limited" [ref=f7e468]
+                      - generic [ref=f7e472]:
+                        - text: bestseller
+                        - button "Remove tag bestseller" [ref=f7e473]
+                      - textbox "Add tag" [ref=f7e477]:
+                        - /placeholder: ""
+                    - generic [ref=f7e478]:
+                      - button "+ qa" [ref=f7e479]
+                      - button "+ qa-tag" [ref=f7e480]
+                      - button "+ new-arrival" [ref=f7e481]
+                      - button "+ staff-pick" [ref=f7e482]
+                      - button "+ kitchen" [ref=f7e483]
+                      - button "+ canvas" [ref=f7e484]
+            - generic [ref=f7e485]:
+              - heading "Sales channels" [level=2] [ref=f7e488]
+              - generic [ref=f7e490]:
+                - generic [ref=f7e491]:
+                  - generic [ref=f7e492]: Online Store
+                  - switch "Online Store" [checked] [ref=f7e494]
+                - generic [ref=f7e496]:
+                  - generic [ref=f7e497]: Point of Sale
+                  - switch "Point of Sale" [ref=f7e499]
+            - button "Delete product" [ref=f7e502]
+        - generic [ref=f7e508]:
+          - generic [ref=f7e509]:
+            - generic [ref=f7e510]: Draft
+            - text: Changes save to this demo store
+          - generic [ref=f7e512]:
+            - button "Cancel" [ref=f7e513]
+            - button "Save" [ref=f7e515]

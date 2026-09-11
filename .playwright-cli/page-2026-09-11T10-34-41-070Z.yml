@@ -1,0 +1,537 @@
+- generic [ref=f6e1]:
+  - generic [ref=f6e3]:
+    - navigation "Main navigation" [ref=f6e4]:
+      - button "Northstar Goods Demo store" [ref=f6e8]:
+        - generic [ref=f6e15]:
+          - generic [ref=f6e16]: Northstar Goods
+          - generic [ref=f6e17]: Demo store
+      - generic [ref=f6e20]:
+        - link "Home" [ref=f6e21] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f6e26]:
+          - button "Orders 49" [expanded] [ref=f6e27]:
+            - generic [ref=f6e32]: Orders
+            - generic [ref=f6e33]: "49"
+          - generic [ref=f6e36]:
+            - link "All orders" [ref=f6e37] [cursor=pointer]:
+              - /url: /orders
+            - link "Drafts13" [ref=f6e38] [cursor=pointer]:
+              - /url: /draft-orders
+            - link "Abandoned checkouts" [ref=f6e39] [cursor=pointer]:
+              - /url: /abandoned-checkouts
+        - generic [ref=f6e40]:
+          - button "Products" [expanded] [ref=f6e41]
+          - generic [ref=f6e48]:
+            - link "All products" [ref=f6e49] [cursor=pointer]:
+              - /url: /products
+            - link "Collections" [ref=f6e50] [cursor=pointer]:
+              - /url: /collections
+            - link "Inventory" [ref=f6e51] [cursor=pointer]:
+              - /url: /inventory
+            - link "Transfers" [ref=f6e52] [cursor=pointer]:
+              - /url: /inventory/transfers
+            - link "Gift cards" [ref=f6e53] [cursor=pointer]:
+              - /url: /gift-cards
+            - link "Locations" [ref=f6e54] [cursor=pointer]:
+              - /url: /locations
+        - button "Customers" [ref=f6e56]
+        - button "Content" [ref=f6e66]
+        - link "Marketing" [ref=f6e73] [cursor=pointer]:
+          - /url: /marketing
+        - link "Discounts" [ref=f6e78] [cursor=pointer]:
+          - /url: /discounts
+        - link "Analytics" [ref=f6e83] [cursor=pointer]:
+          - /url: /analytics
+        - link "Finances" [ref=f6e87] [cursor=pointer]:
+          - /url: /finances/payouts
+        - button "Online Store" [ref=f6e94]
+        - link "Apps" [ref=f6e101] [cursor=pointer]:
+          - /url: /apps
+      - generic [ref=f6e108]:
+        - link "Settings" [ref=f6e109] [cursor=pointer]:
+          - /url: /settings
+        - generic [ref=f6e113]:
+          - generic [ref=f6e114]: AC
+          - generic [ref=f6e115]:
+            - paragraph [ref=f6e116]: Ava Chen
+            - paragraph [ref=f6e117]: ava@northstargoods.com
+    - generic [ref=f6e118]:
+      - banner [ref=f6e119]:
+        - button "Open search" [ref=f6e120]:
+          - generic [ref=f6e124]: Search
+          - generic [ref=f6e125]: ⌘K
+        - generic [ref=f6e126]:
+          - generic [ref=f6e127]: Demo data
+          - button "Help" [ref=f6e132]
+          - button "Notifications" [ref=f6e138]
+          - button "Account menu" [ref=f6e143]:
+            - generic [ref=f6e144]: AC
+      - main [ref=f6e147]:
+        - generic [ref=f6e181]:
+          - generic [ref=f6e183]:
+            - textbox "Search products" [ref=f6e185]
+            - button "Filters" [ref=f6e188]
+            - button "Import" [active] [ref=f6e193]
+            - button "Export CSV" [ref=f6e199]:
+              - generic [ref=f6e204]: Export
+            - button "Add product" [ref=f6e205]
+          - table [ref=f6e209]:
+            - rowgroup [ref=f6e210]:
+              - row [ref=f6e211]:
+                - columnheader [ref=f6e212]:
+                  - checkbox "Select all rows on this page" [ref=f6e214] [cursor=pointer]
+                - columnheader [ref=f6e215]:
+                  - button "Product" [ref=f6e216]
+                - columnheader [ref=f6e220]:
+                  - button "Status" [ref=f6e221]
+                - columnheader "Inventory" [ref=f6e225]
+                - columnheader [ref=f6e226]:
+                  - button "Price" [ref=f6e227]
+                - columnheader [ref=f6e231]:
+                  - button "Type" [ref=f6e232]
+                - columnheader [ref=f6e236]:
+                  - button "Vendor" [ref=f6e237]
+                - columnheader "Channels" [ref=f6e241]
+                - columnheader [ref=f6e242]:
+                  - button "Updated" [ref=f6e243]
+                - columnheader "Actions" [ref=f6e247]
+            - rowgroup [ref=f6e249]:
+              - row [ref=f6e250] [cursor=pointer]:
+                - cell [ref=f6e251]:
+                  - checkbox "Select row" [ref=f6e253]
+                - cell "IMG QA Test Product v2 QA-1" [ref=f6e254]:
+                  - generic [ref=f6e255]:
+                    - generic [ref=f6e256]: IMG
+                    - generic [ref=f6e257]:
+                      - paragraph [ref=f6e258]: QA Test Product v2
+                      - paragraph [ref=f6e259]: QA-1
+                - cell "Active" [ref=f6e260]
+                - cell "Out of stock" [ref=f6e263]
+                - cell "$9.99" [ref=f6e265]
+                - cell "—" [ref=f6e266]
+                - cell "QA Vendor" [ref=f6e267]
+                - cell "Online" [ref=f6e268]
+                - cell "32m ago" [ref=f6e271]
+                - cell [ref=f6e272]:
+                  - button "Actions for QA Test Product v2" [ref=f6e274]
+              - row [ref=f6e279] [cursor=pointer]:
+                - cell [ref=f6e280]:
+                  - checkbox "Select row" [ref=f6e282]
+                - cell "IMG QA Test Product v2 QA-1" [ref=f6e283]:
+                  - generic [ref=f6e284]:
+                    - generic [ref=f6e285]: IMG
+                    - generic [ref=f6e286]:
+                      - paragraph [ref=f6e287]: QA Test Product v2
+                      - paragraph [ref=f6e288]: QA-1
+                - cell "Active" [ref=f6e289]
+                - cell "Out of stock" [ref=f6e292]
+                - cell "$9.99" [ref=f6e294]
+                - cell "—" [ref=f6e295]
+                - cell "QA Vendor" [ref=f6e296]
+                - cell "Online" [ref=f6e297]
+                - cell "1h ago" [ref=f6e300]
+                - cell [ref=f6e301]:
+                  - button "Actions for QA Test Product v2" [ref=f6e303]
+              - row [ref=f6e308] [cursor=pointer]:
+                - cell [ref=f6e309]:
+                  - checkbox "Select row" [ref=f6e311]
+                - cell [ref=f6e312]:
+                  - generic [ref=f6e314]:
+                    - paragraph [ref=f6e315]: Pre-Seasoned Cast Iron Skillet
+                    - paragraph [ref=f6e316]: CIS47
+                - cell "Active" [ref=f6e317]
+                - cell "4 in stock" [ref=f6e320]
+                - cell "$42.00" [ref=f6e322]
+                - cell "Kitchen" [ref=f6e323]
+                - cell "Hearthstone" [ref=f6e324]
+                - cell "Online POS" [ref=f6e325]:
+                  - generic [ref=f6e326]:
+                    - generic [ref=f6e327]: Online
+                    - generic [ref=f6e328]: POS
+                - cell "1d ago" [ref=f6e329]
+                - cell [ref=f6e330]:
+                  - button "Actions for Pre-Seasoned Cast Iron Skillet" [ref=f6e332]
+              - row [ref=f6e337] [cursor=pointer]:
+                - cell [ref=f6e338]:
+                  - checkbox "Select row" [ref=f6e340]
+                - cell [ref=f6e341]:
+                  - generic [ref=f6e343]:
+                    - paragraph [ref=f6e344]: Carry-On Duffel 40L
+                    - paragraph [ref=f6e345]: 2 variants
+                - cell "Active" [ref=f6e346]
+                - cell "87 in stock · 2 variants" [ref=f6e349]
+                - cell "$84.00" [ref=f6e351]
+                - cell "Bags" [ref=f6e352]
+                - cell "Trailhead Supply" [ref=f6e353]
+                - cell "Online" [ref=f6e354]
+                - cell "1d ago" [ref=f6e357]
+                - cell [ref=f6e358]:
+                  - button "Actions for Carry-On Duffel 40L" [ref=f6e360]
+              - row [ref=f6e365] [cursor=pointer]:
+                - cell [ref=f6e366]:
+                  - checkbox "Select row" [ref=f6e368]
+                - cell [ref=f6e369]:
+                  - generic [ref=f6e371]:
+                    - paragraph [ref=f6e372]: Recycled Wool Scarf
+                    - paragraph [ref=f6e373]: 3 variants
+                - cell "Active" [ref=f6e374]
+                - cell "13 in stock · 3 variants" [ref=f6e377]
+                - cell "$38.00" [ref=f6e379]
+                - cell "Apparel" [ref=f6e380]
+                - cell "Meridian Basics" [ref=f6e381]
+                - cell "Online POS" [ref=f6e382]:
+                  - generic [ref=f6e383]:
+                    - generic [ref=f6e384]: Online
+                    - generic [ref=f6e385]: POS
+                - cell "1d ago" [ref=f6e386]
+                - cell [ref=f6e387]:
+                  - button "Actions for Recycled Wool Scarf" [ref=f6e389]
+              - row [ref=f6e394] [cursor=pointer]:
+                - cell [ref=f6e395]:
+                  - checkbox "Select row" [ref=f6e397]
+                - cell [ref=f6e398]:
+                  - generic [ref=f6e400]:
+                    - paragraph [ref=f6e401]: Canvas Dopp Kit
+                    - paragraph [ref=f6e402]: 2 variants
+                - cell "Active" [ref=f6e403]
+                - cell "75 in stock · 2 variants" [ref=f6e406]
+                - cell "$32.00" [ref=f6e408]
+                - cell "Bags" [ref=f6e409]
+                - cell "Trailhead Supply" [ref=f6e410]
+                - cell "Online" [ref=f6e411]
+                - cell "1d ago" [ref=f6e414]
+                - cell [ref=f6e415]:
+                  - button "Actions for Canvas Dopp Kit" [ref=f6e417]
+              - row [ref=f6e422] [cursor=pointer]:
+                - cell [ref=f6e423]:
+                  - checkbox "Select row" [ref=f6e425]
+                - cell [ref=f6e426]:
+                  - generic [ref=f6e428]:
+                    - paragraph [ref=f6e429]: Ceramic Coffee Mug
+                    - paragraph [ref=f6e430]: 4 variants
+                - cell "Active" [ref=f6e431]
+                - cell "104 in stock · 4 variants" [ref=f6e434]
+                - cell "$18.00" [ref=f6e436]
+                - cell "Kitchen" [ref=f6e437]
+                - cell "Hearthstone" [ref=f6e438]
+                - cell "Online" [ref=f6e439]
+                - cell "2d ago" [ref=f6e442]
+                - cell [ref=f6e443]:
+                  - button "Actions for Ceramic Coffee Mug" [ref=f6e445]
+              - row [ref=f6e450] [cursor=pointer]:
+                - cell [ref=f6e451]:
+                  - checkbox "Select row" [ref=f6e453]
+                - cell [ref=f6e454]:
+                  - generic [ref=f6e456]:
+                    - paragraph [ref=f6e457]: Merino Fingerless Gloves
+                    - paragraph [ref=f6e458]: 2 variants
+                - cell "Draft" [ref=f6e459]
+                - cell "137 in stock · 2 variants" [ref=f6e462]
+                - cell "$26.00" [ref=f6e464]
+                - cell "Apparel" [ref=f6e465]
+                - cell "Meridian Basics" [ref=f6e466]
+                - cell "Online POS" [ref=f6e467]:
+                  - generic [ref=f6e468]:
+                    - generic [ref=f6e469]: Online
+                    - generic [ref=f6e470]: POS
+                - cell "2d ago" [ref=f6e471]
+                - cell [ref=f6e472]:
+                  - button "Actions for Merino Fingerless Gloves" [ref=f6e474]
+              - row [ref=f6e479] [cursor=pointer]:
+                - cell [ref=f6e480]:
+                  - checkbox "Select row" [ref=f6e482]
+                - cell [ref=f6e483]:
+                  - generic [ref=f6e485]:
+                    - paragraph [ref=f6e486]: Kids Fleece Pullover
+                    - paragraph [ref=f6e487]: 6 variants
+                - cell "Archived" [ref=f6e488]
+                - cell "224 in stock · 6 variants" [ref=f6e491]
+                - cell "$34.00" [ref=f6e493]
+                - cell "Apparel" [ref=f6e494]
+                - cell "Meridian Basics" [ref=f6e495]
+                - cell "Online" [ref=f6e496]
+                - cell "3d ago" [ref=f6e499]
+                - cell [ref=f6e500]:
+                  - button "Actions for Kids Fleece Pullover" [ref=f6e502]
+              - row [ref=f6e507] [cursor=pointer]:
+                - cell [ref=f6e508]:
+                  - checkbox "Select row" [ref=f6e510]
+                - cell [ref=f6e511]:
+                  - generic [ref=f6e513]:
+                    - paragraph [ref=f6e514]: Minimal Sneakers
+                    - paragraph [ref=f6e515]: 15 variants
+                - cell "Active" [ref=f6e516]
+                - cell "664 in stock · 15 variants" [ref=f6e519]
+                - cell "$110.00$89.00" [ref=f6e521]
+                - cell "Footwear" [ref=f6e523]
+                - cell "Alder & Oak" [ref=f6e524]
+                - cell "Online" [ref=f6e525]
+                - cell "3d ago" [ref=f6e528]
+                - cell [ref=f6e529]:
+                  - button "Actions for Minimal Sneakers" [ref=f6e531]
+              - row [ref=f6e536] [cursor=pointer]:
+                - cell [ref=f6e537]:
+                  - checkbox "Select row" [ref=f6e539]
+                - cell [ref=f6e540]:
+                  - generic [ref=f6e542]:
+                    - paragraph [ref=f6e543]: Classic Cotton T-Shirt
+                    - paragraph [ref=f6e544]: 20 variants
+                - cell "Active" [ref=f6e545]
+                - cell "880 in stock · 20 variants" [ref=f6e548]
+                - cell "$32.00$24.00" [ref=f6e550]
+                - cell "Apparel" [ref=f6e552]
+                - cell "Meridian Basics" [ref=f6e553]
+                - cell "Online" [ref=f6e554]
+                - cell "3d ago" [ref=f6e557]
+                - cell [ref=f6e558]:
+                  - button "Actions for Classic Cotton T-Shirt" [ref=f6e560]
+              - row [ref=f6e565] [cursor=pointer]:
+                - cell [ref=f6e566]:
+                  - checkbox "Select row" [ref=f6e568]
+                - cell [ref=f6e569]:
+                  - generic [ref=f6e571]:
+                    - paragraph [ref=f6e572]: Cold-Process Bar Soap Trio
+                    - paragraph [ref=f6e573]: BST53
+                - cell "Active" [ref=f6e574]
+                - cell "80 in stock" [ref=f6e577]
+                - cell "$18.00" [ref=f6e579]
+                - cell "Home" [ref=f6e580]
+                - cell "Hearthstone" [ref=f6e581]
+                - cell "Online" [ref=f6e582]
+                - cell "4d ago" [ref=f6e585]
+                - cell [ref=f6e586]:
+                  - button "Actions for Cold-Process Bar Soap Trio" [ref=f6e588]
+              - row [ref=f6e593] [cursor=pointer]:
+                - cell [ref=f6e594]:
+                  - checkbox "Select row" [ref=f6e596]
+                - cell [ref=f6e597]:
+                  - generic [ref=f6e599]:
+                    - paragraph [ref=f6e600]: Walnut Desk Organizer
+                    - paragraph [ref=f6e601]: DO20
+                - cell "Active" [ref=f6e602]
+                - cell "44 in stock" [ref=f6e605]
+                - cell "$46.00" [ref=f6e607]
+                - cell "Home" [ref=f6e608]
+                - cell "Hearthstone" [ref=f6e609]
+                - cell "Online" [ref=f6e610]
+                - cell "4d ago" [ref=f6e613]
+                - cell [ref=f6e614]:
+                  - button "Actions for Walnut Desk Organizer" [ref=f6e616]
+              - row [ref=f6e621] [cursor=pointer]:
+                - cell [ref=f6e622]:
+                  - checkbox "Select row" [ref=f6e624]
+                - cell [ref=f6e625]:
+                  - generic [ref=f6e627]:
+                    - paragraph [ref=f6e628]: Matte Ceramic Vase
+                    - paragraph [ref=f6e629]: 3 variants
+                - cell "Draft" [ref=f6e630]
+                - cell "123 in stock · 3 variants" [ref=f6e633]
+                - cell "$34.00" [ref=f6e635]
+                - cell "Home" [ref=f6e636]
+                - cell "Hearthstone" [ref=f6e637]
+                - cell "Online" [ref=f6e638]
+                - cell "5d ago" [ref=f6e641]
+                - cell [ref=f6e642]:
+                  - button "Actions for Matte Ceramic Vase" [ref=f6e644]
+              - row [ref=f6e649] [cursor=pointer]:
+                - cell [ref=f6e650]:
+                  - checkbox "Select row" [ref=f6e652]
+                - cell [ref=f6e653]:
+                  - generic [ref=f6e655]:
+                    - paragraph [ref=f6e656]: Canvas Backpack
+                    - paragraph [ref=f6e657]: 3 variants
+                - cell "Active" [ref=f6e658]
+                - cell "118 in stock · 3 variants" [ref=f6e661]
+                - cell "$68.00" [ref=f6e663]
+                - cell "Bags" [ref=f6e664]
+                - cell "Trailhead Supply" [ref=f6e665]
+                - cell "Online" [ref=f6e666]
+                - cell "6d ago" [ref=f6e669]
+                - cell [ref=f6e670]:
+                  - button "Actions for Canvas Backpack" [ref=f6e672]
+              - row [ref=f6e677] [cursor=pointer]:
+                - cell [ref=f6e678]:
+                  - checkbox "Select row" [ref=f6e680]
+                - cell [ref=f6e681]:
+                  - generic [ref=f6e683]:
+                    - paragraph [ref=f6e684]: Stonewashed Linen Apron
+                    - paragraph [ref=f6e685]: 2 variants
+                - cell "Active" [ref=f6e686]
+                - cell "52 in stock · 2 variants" [ref=f6e689]
+                - cell "$36.00" [ref=f6e691]
+                - cell "Kitchen" [ref=f6e692]
+                - cell "Hearthstone" [ref=f6e693]
+                - cell "Online" [ref=f6e694]
+                - cell "6d ago" [ref=f6e697]
+                - cell [ref=f6e698]:
+                  - button "Actions for Stonewashed Linen Apron" [ref=f6e700]
+              - row [ref=f6e705] [cursor=pointer]:
+                - cell [ref=f6e706]:
+                  - checkbox "Select row" [ref=f6e708]
+                - cell [ref=f6e709]:
+                  - generic [ref=f6e711]:
+                    - paragraph [ref=f6e712]: Merino Beanie
+                    - paragraph [ref=f6e713]: 4 variants
+                - cell "Active" [ref=f6e714]
+                - cell "177 in stock · 4 variants" [ref=f6e717]
+                - cell "$30.00" [ref=f6e719]
+                - cell "Apparel" [ref=f6e720]
+                - cell "Meridian Basics" [ref=f6e721]
+                - cell "Online" [ref=f6e722]
+                - cell "6d ago" [ref=f6e725]
+                - cell [ref=f6e726]:
+                  - button "Actions for Merino Beanie" [ref=f6e728]
+              - row [ref=f6e733] [cursor=pointer]:
+                - cell [ref=f6e734]:
+                  - checkbox "Select row" [ref=f6e736]
+                - cell [ref=f6e737]:
+                  - generic [ref=f6e739]:
+                    - paragraph [ref=f6e740]: Stainless Lunch Box
+                    - paragraph [ref=f6e741]: 2 variants
+                - cell "Archived" [ref=f6e742]
+                - cell "67 in stock · 2 variants" [ref=f6e745]
+                - cell "$28.00" [ref=f6e747]
+                - cell "Kitchen" [ref=f6e748]
+                - cell "Northstar Goods" [ref=f6e749]
+                - cell "Online" [ref=f6e750]
+                - cell "7d ago" [ref=f6e753]
+                - cell [ref=f6e754]:
+                  - button "Actions for Stainless Lunch Box" [ref=f6e756]
+              - row [ref=f6e761] [cursor=pointer]:
+                - cell [ref=f6e762]:
+                  - checkbox "Select row" [ref=f6e764]
+                - cell [ref=f6e765]:
+                  - generic [ref=f6e767]:
+                    - paragraph [ref=f6e768]: Everyday Hoodie
+                    - paragraph [ref=f6e769]: 16 variants
+                - cell "Draft" [ref=f6e770]
+                - cell "731 in stock · 16 variants" [ref=f6e773]
+                - cell "$68.00$54.00" [ref=f6e775]
+                - cell "Apparel" [ref=f6e777]
+                - cell "Meridian Basics" [ref=f6e778]
+                - cell "Online" [ref=f6e779]
+                - cell "7d ago" [ref=f6e782]
+                - cell [ref=f6e783]:
+                  - button "Actions for Everyday Hoodie" [ref=f6e785]
+              - row [ref=f6e790] [cursor=pointer]:
+                - cell [ref=f6e791]:
+                  - checkbox "Select row" [ref=f6e793]
+                - cell [ref=f6e794]:
+                  - generic [ref=f6e796]:
+                    - paragraph [ref=f6e797]: Shower Steamer Set
+                    - paragraph [ref=f6e798]: SSS39
+                - cell "Active" [ref=f6e799]
+                - cell "31 in stock" [ref=f6e802]
+                - cell "$22.00" [ref=f6e804]
+                - cell "Home" [ref=f6e805]
+                - cell "Hearthstone" [ref=f6e806]
+                - cell "Online" [ref=f6e807]
+                - cell "9d ago" [ref=f6e810]
+                - cell [ref=f6e811]:
+                  - button "Actions for Shower Steamer Set" [ref=f6e813]
+              - row [ref=f6e818] [cursor=pointer]:
+                - cell [ref=f6e819]:
+                  - checkbox "Select row" [ref=f6e821]
+                - cell [ref=f6e822]:
+                  - generic [ref=f6e824]:
+                    - paragraph [ref=f6e825]: Kids Organic Tee
+                    - paragraph [ref=f6e826]: 9 variants
+                - cell "Active" [ref=f6e827]
+                - cell "523 in stock · 9 variants" [ref=f6e830]
+                - cell "$18.00" [ref=f6e832]
+                - cell "Apparel" [ref=f6e833]
+                - cell "Meridian Basics" [ref=f6e834]
+                - cell "Online" [ref=f6e835]
+                - cell "10d ago" [ref=f6e838]
+                - cell [ref=f6e839]:
+                  - button "Actions for Kids Organic Tee" [ref=f6e841]
+              - row [ref=f6e846] [cursor=pointer]:
+                - cell [ref=f6e847]:
+                  - checkbox "Select row" [ref=f6e849]
+                - cell [ref=f6e850]:
+                  - generic [ref=f6e852]:
+                    - paragraph [ref=f6e853]: Waterproof Field Journal
+                    - paragraph [ref=f6e854]: 3 variants
+                - cell "Draft" [ref=f6e855]
+                - cell "113 in stock · 3 variants" [ref=f6e858]
+                - cell "$22.00" [ref=f6e860]
+                - cell "Stationery" [ref=f6e861]
+                - cell "Trailhead Supply" [ref=f6e862]
+                - cell "Online" [ref=f6e863]
+                - cell "10d ago" [ref=f6e866]
+                - cell [ref=f6e867]:
+                  - button "Actions for Waterproof Field Journal" [ref=f6e869]
+              - row [ref=f6e874] [cursor=pointer]:
+                - cell [ref=f6e875]:
+                  - checkbox "Select row" [ref=f6e877]
+                - cell [ref=f6e878]:
+                  - generic [ref=f6e880]:
+                    - paragraph [ref=f6e881]: Leather Bifold Wallet
+                    - paragraph [ref=f6e882]: 3 variants
+                - cell "Active" [ref=f6e883]
+                - cell "188 in stock · 3 variants" [ref=f6e886]
+                - cell "$42.00" [ref=f6e888]
+                - cell "Accessories" [ref=f6e889]
+                - cell "Alder & Oak" [ref=f6e890]
+                - cell "Online" [ref=f6e891]
+                - cell "11d ago" [ref=f6e894]
+                - cell [ref=f6e895]:
+                  - button "Actions for Leather Bifold Wallet" [ref=f6e897]
+              - row [ref=f6e902] [cursor=pointer]:
+                - cell [ref=f6e903]:
+                  - checkbox "Select row" [ref=f6e905]
+                - cell [ref=f6e906]:
+                  - generic [ref=f6e908]:
+                    - paragraph [ref=f6e909]: Waterproof Picnic Blanket
+                    - paragraph [ref=f6e910]: 2 variants
+                - cell "Active" [ref=f6e911]
+                - cell "14 in stock · 2 variants" [ref=f6e914]
+                - cell "$44.00" [ref=f6e916]
+                - cell "Outdoor" [ref=f6e917]
+                - cell "Trailhead Supply" [ref=f6e918]
+                - cell "Online" [ref=f6e919]
+                - cell "12d ago" [ref=f6e922]
+                - cell [ref=f6e923]:
+                  - button "Actions for Waterproof Picnic Blanket" [ref=f6e925]
+              - row [ref=f6e930] [cursor=pointer]:
+                - cell [ref=f6e931]:
+                  - checkbox "Select row" [ref=f6e933]
+                - cell [ref=f6e934]:
+                  - generic [ref=f6e936]:
+                    - paragraph [ref=f6e937]: Collapsible Trail Flask
+                    - paragraph [ref=f6e938]: 2 variants
+                - cell "Active" [ref=f6e939]
+                - cell "95 in stock · 2 variants" [ref=f6e942]
+                - cell "$22.00" [ref=f6e944]
+                - cell "Outdoor" [ref=f6e945]
+                - cell "Trailhead Supply" [ref=f6e946]
+                - cell "Online" [ref=f6e947]
+                - cell "12d ago" [ref=f6e950]
+                - cell [ref=f6e951]:
+                  - button "Actions for Collapsible Trail Flask" [ref=f6e953]
+          - generic [ref=f6e958]:
+            - paragraph [ref=f6e959]:
+              - text: Showing
+              - generic [ref=f6e960]: 1–25
+              - text: of 55
+            - generic [ref=f6e961]:
+              - button "Previous page" [disabled] [ref=f6e962]:
+                - generic [ref=f6e963]: Previous
+              - generic [ref=f6e964]: Page 1 of 3
+              - button "Next page" [ref=f6e965]:
+                - generic [ref=f6e966]: Next
+  - dialog "Import products by CSV" [ref=f6e968]:
+    - generic [ref=f6e969]:
+      - heading "Import products by CSV" [level=2] [ref=f6e970]
+      - button "Close" [ref=f6e971]
+    - generic [ref=f6e976]:
+      - paragraph [ref=f6e977]:
+        - text: "Required columns:"
+        - strong [ref=f6e978]: Title
+        - text: ","
+        - strong [ref=f6e979]: Price
+        - text: ". Optional: Vendor, Type, Status (active/draft), Tags (pipe-separated), SKU. Each row creates one product with a single default variant."
+      - generic [ref=f6e980] [cursor=pointer]: Choose a CSV file, or drop one here
+    - generic [ref=f6e985]:
+      - button "Download template" [ref=f6e986]
+      - button "Import" [disabled] [ref=f6e988]

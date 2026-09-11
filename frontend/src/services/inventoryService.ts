@@ -2,7 +2,7 @@ import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
 import { delay } from '@/lib/delay'
 import { CURRENT_USER } from '@/lib/constants'
-import { syncMutation } from './api'
+import { syncMutation, gqlLiteral } from './api'
 import type { InventoryHistoryEntry, InventoryLevel } from '@/types'
 
 /** Inventory service (spec §16, §48): adjustments, transfers, history. */
@@ -49,7 +49,7 @@ export async function adjustInventory(
   const updated = { ...current, available: newAvailable }
   store.upsertInventoryLevel(updated)
   store.addInventoryHistory([recordHistory(updated, change, newAvailable, reason)])
-  syncMutation(`mutation { inventoryAdjust(input: { variantId: ${JSON.stringify(variantId)}, locationId: ${JSON.stringify(locationId)}, availableDelta: ${change}, reason: ${JSON.stringify(reason)} }) { userErrors { message } } }`)
+  syncMutation(`mutation { inventoryAdjust(input: { variantId: ${gqlLiteral(variantId)}, locationId: ${gqlLiteral(locationId)}, availableDelta: ${change}, reason: ${gqlLiteral(reason)} }) { userErrors { message } } }`)
 }
 
 export interface TransferInput {

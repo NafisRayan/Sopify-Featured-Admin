@@ -421,7 +421,7 @@ export class StoreContentService {
 
   // bootstrap snapshot
   async snapshot(): Promise<any> {
-    const [products, customers, orders, abandonedCheckouts, collections, locations, inventoryLevels, inventoryHistory, discounts, campaigns, staff, pages, blogPosts, files, menus, apps, notifications, tasks, theme, themeLibrary, companies, segments, transfers, giftCards, payouts, balanceTransactions, metafieldDefinitions, metafields, redirects, locales, markets, activity, returns, orderEdits, planRow, settings, themeSingleton] =
+    const [products, customersRaw, orders, abandonedCheckouts, collections, locations, inventoryLevels, inventoryHistory, discounts, campaigns, staff, pages, blogPosts, files, menus, apps, notifications, tasks, theme, themeLibrary, companies, segments, transfers, giftCards, payouts, balanceTransactions, metafieldDefinitions, metafields, redirects, locales, markets, activity, returns, orderEdits, planRow, settings, themeSingleton] =
       await Promise.all([
         this.prisma.product.findMany({ orderBy: { updatedAt: 'desc' } }),
         this.prisma.customer.findMany({}),
@@ -488,7 +488,39 @@ export class StoreContentService {
       }
     })
     const customerOrders = await this.prisma.order.findMany({ where: { status: { notIn: ['draft', 'cancelled'] } }, select: { customerId: true, total: true, createdAt: true } })
-    const customersDecorated = (customers as Record<string, unknown>[]).map((c) => {
+    // evaluate segment membership server-side
+    const segmentRows = await this.prisma.segment.findMany()
+    const segmentRowsEvaluated = await Promise.all(
+      segmentRows.map(async (sg: any) => {
+        const filters = parseJson<{ column: string; relation: string; value: string }[]>(sg.filters as string, [])
+        const members = (customersRaw as Record<string, unknown>[]).filter((c) => {
+          const stats = {
+            ordersCount: customerOrders.filter((o: any) => o.customerId === c.id).length,
+            totalSpent: roundMoney(customerOrders.filter((o: any) => o.customerId === c.id).reduce((s2: number, o: any) => s2 + o.total, 0)),
+          }
+          return filters.every((f) => {
+            const actual =
+              f.column === 'orders_count' ? stats.ordersCount
+              : f.column === 'total_spent' ? stats.totalSpent
+              : f.column === 'tag' ? parseJson<string[]>(c.tags as string, []).join('|').toLowerCase()
+              : f.column === 'email_state' ? c.emailMarketingConsent
+              : f.column === 'city' ? (parseJson<{ city?: string }>(c.defaultAddress as string, {})?.city ?? '')
+              : (parseJson<{ country?: string }>(c.defaultAddress as string, {})?.country ?? '')
+            const value = f.value.trim().toLowerCase()
+            const numeric = Number(value)
+            switch (f.relation) {
+              case 'gt': return !Number.isNaN(numeric) && Number(actual) > numeric
+              case 'lt': return !Number.isNaN(numeric) && Number(actual) < numeric
+              case 'equals': return String(actual).toLowerCase() === value
+              case 'contains': return String(actual).toLowerCase().includes(value)
+              default: return false
+            }
+          })
+        }).length
+        return { ...sg, filters: parseJson(sg.filters as string, []), memberCount: members }
+      }),
+    )
+    const customersDecorated = (customersRaw as Record<string, unknown>[]).map((c: any) => {
       const mine = customerOrders.filter((o) => o.customerId === c.id)
       const sorted = mine.sort((a, b) => b.createdAt.toISOString().localeCompare(a.createdAt.toISOString()))
       const stats = { ordersCount: mine.length, totalSpent: roundMoney(mine.reduce((s2, o) => s2 + o.total, 0)), lastOrderAt: sorted[0]?.createdAt ?? null }
@@ -515,8 +547,16 @@ export class StoreContentService {
       tasks,
       theme,
       themeLibrary,
-      companies: companies.map((c: any) => ({ ...c, locations: parseJson(c.locations as string, []), contacts: parseJson(c.contacts as string, []) })),
-      segments: segments.map((s: any) => ({ ...s, filters: parseJson(s.filters as string, []) })),
+      companies: companies.map((c: any) => {
+        const mine = customerOrders.filter((o: any) => o.customerId === c.customerId)
+        return {
+          ...c,
+          locations: parseJson(c.locations as string, []),
+          contacts: parseJson(c.contacts as string, []),
+          totalSpent: roundMoney(mine.reduce((s2: number, o: any) => s2 + o.total, 0)),
+        }
+      }),
+      segments: segmentRowsEvaluated,
       transfers: transfers.map((t: any) => ({ ...t, lines: parseJson(t.lines as string, []) })),
       giftCards: giftCards.map((g: any) => ({ ...g, history: parseJson(g.history as string, []) })),
       payouts,

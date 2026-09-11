@@ -1,6 +1,6 @@
 import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
-import { syncMutation } from './api'
+import { syncMutation, gqlLiteral } from './api'
 import { delay } from '@/lib/delay'
 import type { Campaign } from '@/types'
 
@@ -26,7 +26,7 @@ export async function createCampaign(input: {
     cost: input.cost,
   }
   getStore().addCampaign(campaign)
-  syncMutation(`mutation { campaignCreate(campaign: ${JSON.stringify({ name: input.name, channel: input.channel, audience: input.audience, cost: input.cost })}) { userErrors { message } } }`)
+  syncMutation(`mutation { campaignCreate(campaign: ${gqlLiteral({ name: input.name, channel: input.channel, audience: input.audience, cost: input.cost })}) { userErrors { message } } }`)
   return campaign
 }
 

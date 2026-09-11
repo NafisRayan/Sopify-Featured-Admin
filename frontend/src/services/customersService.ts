@@ -1,7 +1,7 @@
 import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
 import { delay } from '@/lib/delay'
-import { syncMutation } from './api'
+import { syncMutation, gqlLiteral, mutatePayload, IS_REMOTE } from './api'
 import type { Customer, Address, MarketingConsent } from '@/types'
 
 /**
@@ -20,6 +20,11 @@ export async function createCustomer(input: {
   acceptsMarketing?: boolean
 }): Promise<Customer> {
   await delay(350)
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload('customerCreate', `customerCreate(customer: { firstName: ${gqlLiteral(input.firstName)}, lastName: ${gqlLiteral(input.lastName)}, email: ${gqlLiteral(input.email)}, phone: ${gqlLiteral(input.phone ?? null)}, note: ${gqlLiteral(input.note ?? null)}, tags: ${gqlLiteral(input.tags ?? [])} }) { customer { id firstName lastName email phone defaultAddress { firstName lastName address1 address2 city province country zip phone company } addresses { firstName lastName address1 address2 city province country zip phone company } tags note emailMarketingConsent taxExempt createdAt ordersCount totalSpent lastOrderAt } userErrors { field message } }`)
+    getStore().addCustomer(entity as Customer)
+    return entity as Customer
+  }
   const store = getStore()
   if (store.customers.some((c) => c.email.toLowerCase() === input.email.toLowerCase())) {
     throw new Error('A customer with this email already exists')
@@ -53,7 +58,7 @@ export async function createCustomer(input: {
     createdAt: now,
   }
   store.addCustomer(customer)
-  syncMutation(`mutation { customerCreate(customer: { firstName: ${JSON.stringify(customer.firstName)}, lastName: ${JSON.stringify(customer.lastName)}, email: ${JSON.stringify(customer.email)}, phone: ${JSON.stringify(customer.phone ?? null)}, note: ${JSON.stringify(customer.note ?? null)}, tags: ${JSON.stringify(customer.tags)} }) { userErrors { message } } }`)
+  syncMutation(`mutation { customerCreate(customer: { firstName: ${gqlLiteral(customer.firstName)}, lastName: ${gqlLiteral(customer.lastName)}, email: ${gqlLiteral(customer.email)}, phone: ${gqlLiteral(customer.phone ?? null)}, note: ${gqlLiteral(customer.note ?? null)}, tags: ${gqlLiteral(customer.tags)} }) { userErrors { message } } }`)
   return customer
 }
 
@@ -61,13 +66,13 @@ export async function updateCustomer(id: string, patch: Partial<Customer>): Prom
   await delay(300)
   getStore().patchCustomer(id, patch)
   const { addresses: _a, defaultAddress: _d, ...input } = patch as any
-  syncMutation(`mutation { customerUpdate(id: ${JSON.stringify(id)}, customer: ${JSON.stringify(input)}) { userErrors { message } } }`)
+  syncMutation(`mutation { customerUpdate(id: ${gqlLiteral(id)}, customer: ${gqlLiteral(input)}) { userErrors { message } } }`)
 }
 
 export async function deleteCustomers(ids: string[]): Promise<void> {
   await delay(350)
   getStore().removeCustomers(ids)
-  syncMutation(`mutation { customerDelete(ids: ${JSON.stringify(ids)}) { userErrors { message } } }`)
+  syncMutation(`mutation { customerDelete(ids: ${gqlLiteral(ids)}) { userErrors { message } } }`)
 }
 
 export async function addCustomerTags(ids: string[], tags: string[]): Promise<void> {

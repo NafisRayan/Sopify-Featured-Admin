@@ -2,7 +2,7 @@ import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
 import { slugify } from '@/lib/validation'
 import { delay } from '@/lib/delay'
-import { syncMutation } from './api'
+import { syncMutation, gqlLiteral, mutatePayload, IS_REMOTE } from './api'
 import type { Product, ProductVariant, ProductMedia, ProductStatus, ProductOption, SalesChannel } from '@/types'
 
 /**
@@ -16,6 +16,12 @@ export async function getProduct(id: string): Promise<Product | undefined> {
 }
 
 export async function createProduct(input?: Partial<Product>): Promise<Product> {
+  if (IS_REMOTE) {
+    const v = input?.variants?.[0]
+    const { entity } = await mutatePayload('productCreate', `productCreate(product: { title: ${gqlLiteral(input?.title ?? '')}, vendor: ${gqlLiteral(input?.vendor ?? 'Northstar Goods')}, productType: ${gqlLiteral(input?.productType ?? '')}, status: ${gqlLiteral(input?.status ?? 'draft')}, tags: ${gqlLiteral(input?.tags ?? [])}, variants: [{ title: ${gqlLiteral(v?.title ?? 'Default Title')}, sku: ${gqlLiteral(v?.sku ?? '')}, price: ${v?.price ?? 0}, available: true }] }) { product { id title descriptionHtml vendor productType category status tags collectionIds channels options { name values } variants { id productId title sku barcode price compareAtPrice costPerItem optionValues weightGrams imageId available } media { id productId type src alt } seo { title description handle } weightGrams requiresShipping trackQuantity createdAt updatedAt totalInventory } userErrors { field message } }`)
+    getStore().addProduct(entity as Product)
+    return entity as Product
+  }
   await delay(350)
   const now = new Date().toISOString()
   const id = uid('p')
@@ -65,7 +71,7 @@ export async function updateProduct(id: string, patch: Partial<Product>): Promis
   if (patch.media !== undefined) input.media = patch.media
   if (patch.options !== undefined) input.options = patch.options
   if (patch.seo !== undefined) input.seo = patch.seo
-  syncMutation(`mutation { productUpdate(id: ${JSON.stringify(id)}, product: ${JSON.stringify(input)}) { userErrors { message } } }`)
+  syncMutation(`mutation { productUpdate(id: ${gqlLiteral(id)}, product: ${gqlLiteral(input)}) { userErrors { message } } }`)
 }
 
 /** Removing products also removes them from collections (relationship integrity, spec §36) */
@@ -78,11 +84,16 @@ export async function deleteProducts(ids: string[]): Promise<void> {
     }
   }
   store.removeProducts(ids)
-  syncMutation(`mutation { productDelete(ids: ${JSON.stringify(ids)}) { userErrors { message } } }`)
+  syncMutation(`mutation { productDelete(ids: ${gqlLiteral(ids)}) { userErrors { message } } }`)
 }
 
 export async function duplicateProduct(id: string): Promise<Product | undefined> {
   await delay(350)
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload('productDuplicate', `productDuplicate(id: ${gqlLiteral(id)}) { product { id title descriptionHtml vendor productType category status tags collectionIds channels options { name values } variants { id productId title sku barcode price compareAtPrice costPerItem optionValues weightGrams imageId available } media { id productId type src alt } seo { title description handle } weightGrams requiresShipping trackQuantity createdAt updatedAt totalInventory } userErrors { field message } }`)
+    if (entity) getStore().addProduct(entity as Product)
+    return entity as Product | undefined
+  }
   const source = getStore().products.find((p) => p.id === id)
   if (!source) return undefined
   const now = new Date().toISOString()

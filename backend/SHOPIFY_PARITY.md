@@ -25,10 +25,10 @@ Comparison of this backend's GraphQL surface against the Shopify Admin GraphQL A
 
 | Shopify domain | Our query/mutation surface | Status |
 |---|---|---|
-| Products (Product, Variant, Option, Media, Publication) | `product(s)`, `productCreate/Update/Delete/Duplicate`, `productStatusSet`, `productAddTags/RemoveTags`, `productMediaReorder`, options & variants via `ProductInput` | ✅ Full (admin-side) |
+| Products (Product, Variant, Option, Media, Publication) | `product(s)`, `productCreate/Update/Delete/Duplicate`, `productStatusSet`, `productAddTags/RemoveTags`, `productMediaReorder`, options & variants via `ProductInput`, **CSV import** + **multipart media upload** (REST `/uploads`, files served statically) | ✅ Full (admin-side) |
 | Collections (Smart/Manual) | `collection(s)`, `collectionCreate/Update/Delete`, `collectionAddProducts/RemoveProducts`, smart-rule evaluation server-side | ✅ Full |
-| Orders (Order, LineItem, Fulfillment, Refund, Transaction, Risk) | `order(s)`, `orderMarkAsPaid`, `orderCancel`, `orderClose/Reopen`, `orderFulfill`, `orderRefund`, `orderEdit`, risk fields, timeline | ✅ Full (admin-side) |
-| Draft orders (DraftOrder, invoice) | `draftOrders`, `draftOrderCreate/Update/Delete`, `draftOrderConvert`, `draftOrderInvoiceSend` | ✅ Full |
+| Orders (Order, LineItem, Fulfillment, Refund, Transaction, Risk) | `order(s)`, `orderMarkAsPaid`, `orderCancel`, `orderClose/Reopen`, `orderFulfill`, `orderRefund`, `orderEdit`, risk fields, timeline + **full Create Order UI** (customer/variant pickers, discounts, shipping, collect payment), **packing-slip & invoice print templates** | ✅ Full (admin-side) |
+| Draft orders (DraftOrder, invoice) | `draftOrders`, `draftOrderCreate/Update/Delete`, `draftOrderConvert`, `draftOrderInvoiceSend`, **Create Order UI** builds drafts with custom shipping/discounts | ✅ Full |
 | Returns & exchanges (Return, ReturnLine) | `returnCreate`, `returnClose`, `returnsForOrder`, restock + refund semantics | ✅ Full (lighter than Shopify's exchange variants) |
 | Abandoned checkouts | `abandonedCheckouts`, `abandonedCheckoutRecoverySend`, `abandonedCheckoutConvert` | ✅ Full |
 | Customers (Customer, Address, consent) | `customer(s)`, `customerCreate/Update/Delete`, tags, addresses, default address, consent, derived stats | ✅ Full |

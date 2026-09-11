@@ -786,7 +786,8 @@ function moreMenuItems(
   }
   return [
     { label: 'Edit tags', icon: <TagIcon size={13} />, onClick: actions.openTags, disabled: !can.edit },
-    { label: 'Print order', icon: <Printer size={13} />, onClick: actions.print },
+    { label: 'Print packing slip', icon: <Printer size={13} />, onClick: () => window.open(`/orders/${order.id}/print?type=packing-slip`, '_blank') },
+    { label: 'Print invoice', icon: <Printer size={13} />, onClick: () => window.open(`/orders/${order.id}/print?type=invoice`, '_blank') },
     { label: 'Duplicate as draft', onClick: actions.duplicateDraft },
     ...(order.status === 'closed'
       ? [{ label: 'Unarchive', icon: <ArchiveRestore size={13} />, onClick: actions.unarchive, disabled: !can.edit }]

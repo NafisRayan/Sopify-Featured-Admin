@@ -2,7 +2,7 @@ import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
 import { slugify } from '@/lib/validation'
 import { delay } from '@/lib/delay'
-import { syncMutation } from './api'
+import { syncMutation, gqlLiteral } from './api'
 import type { Collection, CollectionRule, Product } from '@/types'
 
 /** Evaluate smart-collection rules against a product (live, §15) */
@@ -53,7 +53,7 @@ export async function createCollection(input: Partial<Collection>): Promise<Coll
     throw new Error('A collection with this handle already exists')
   }
   store.addCollection(collection)
-  syncMutation(`mutation { collectionCreate(collection: ${JSON.stringify({ title: collection.title, descriptionHtml: collection.descriptionHtml, imageSrc: collection.imageSrc, handle: collection.handle, type: collection.type, rules: collection.rules, rulesMatch: collection.rulesMatch, productIds: collection.productIds, status: collection.status })}) { userErrors { message } } }`)
+  syncMutation(`mutation { collectionCreate(collection: ${gqlLiteral({ title: collection.title, descriptionHtml: collection.descriptionHtml, imageSrc: collection.imageSrc, handle: collection.handle, type: collection.type, rules: collection.rules, rulesMatch: collection.rulesMatch, productIds: collection.productIds, status: collection.status })}) { userErrors { message } } }`)
   // maintain product → collection links
   for (const pid of collection.productIds) {
     const p = store.products.find((x) => x.id === pid)
@@ -97,7 +97,7 @@ export async function deleteCollections(ids: string[]): Promise<void> {
     }
   }
   store.removeCollections(ids)
-  syncMutation(`mutation { collectionDelete(ids: ${JSON.stringify(ids)}) { userErrors { message } } }`)
+  syncMutation(`mutation { collectionDelete(ids: ${gqlLiteral(ids)}) { userErrors { message } } }`)
 }
 
 export async function addProducts(id: string, productIds: string[]): Promise<void> {

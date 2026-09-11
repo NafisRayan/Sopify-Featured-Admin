@@ -8,6 +8,8 @@ import { SkeletonRows } from '@/components/ui'
 // ── lazy feature pages ──────────────────────────────────────────────────────
 const Dashboard = lazy(() => import('@/features/dashboard/DashboardPage'))
 const OrdersList = lazy(() => import('@/features/orders/OrdersListPage'))
+const OrderCreate = lazy(() => import('@/features/orders/OrderCreatePage'))
+const OrderPrint = lazy(() => import('@/features/orders/OrderPrintPage'))
 const OrderDetail = lazy(() => import('@/features/orders/OrderDetailPage'))
 const DraftOrders = lazy(() => import('@/features/orders/DraftOrdersPage'))
 const AbandonedCheckouts = lazy(() => import('@/features/orders/AbandonedCheckoutsPage'))
@@ -66,6 +68,16 @@ function ScrollToTop() {
 }
 
 export function AppRoutes() {
+  const printRoute = useLocation().pathname.match(/^\/orders\/[^/]+\/print$/)
+  if (printRoute) {
+    return (
+      <Suspense fallback={null}>
+        <Routes>
+          <Route path="/orders/:id/print" element={<OrderPrint />} />
+        </Routes>
+      </Suspense>
+    )
+  }
   return (
     <div className="flex h-dvh overflow-hidden">
       <Sidebar />
@@ -79,6 +91,7 @@ export function AppRoutes() {
 
               {/* Orders */}
               <Route path="/orders" element={<OrdersList />} />
+              <Route path="/orders/new" element={<OrderCreate />} />
               <Route path="/orders/:id" element={<OrderDetail />} />
               <Route path="/draft-orders" element={<DraftOrders />} />
               <Route path="/draft-orders/:id" element={<OrderDetail />} />

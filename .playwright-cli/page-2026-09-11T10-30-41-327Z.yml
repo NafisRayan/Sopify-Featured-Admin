@@ -1,0 +1,207 @@
+- generic [ref=f4e3]:
+  - navigation "Main navigation" [ref=f4e4]:
+    - button "Northstar Goods Demo store" [ref=f4e8]:
+      - generic [ref=f4e15]:
+        - generic [ref=f4e16]: Northstar Goods
+        - generic [ref=f4e17]: Demo store
+    - generic [ref=f4e20]:
+      - link "Home" [ref=f4e21] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f4e26]:
+        - button "Orders 48" [expanded] [ref=f4e27]:
+          - generic [ref=f4e32]: Orders
+          - generic [ref=f4e33]: "48"
+        - generic [ref=f4e36]:
+          - link "All orders" [ref=f4e37] [cursor=pointer]:
+            - /url: /orders
+          - link "Drafts13" [ref=f4e38] [cursor=pointer]:
+            - /url: /draft-orders
+          - link "Abandoned checkouts" [ref=f4e39] [cursor=pointer]:
+            - /url: /abandoned-checkouts
+      - generic [ref=f4e40]:
+        - button "Products" [expanded] [ref=f4e41]
+        - generic [ref=f4e48]:
+          - link "All products" [ref=f4e49] [cursor=pointer]:
+            - /url: /products
+          - link "Collections" [ref=f4e50] [cursor=pointer]:
+            - /url: /collections
+          - link "Inventory" [ref=f4e51] [cursor=pointer]:
+            - /url: /inventory
+          - link "Transfers" [ref=f4e52] [cursor=pointer]:
+            - /url: /inventory/transfers
+          - link "Gift cards" [ref=f4e53] [cursor=pointer]:
+            - /url: /gift-cards
+          - link "Locations" [ref=f4e54] [cursor=pointer]:
+            - /url: /locations
+      - button "Customers" [ref=f4e56]
+      - button "Content" [ref=f4e66]
+      - link "Marketing" [ref=f4e73] [cursor=pointer]:
+        - /url: /marketing
+      - link "Discounts" [ref=f4e78] [cursor=pointer]:
+        - /url: /discounts
+      - link "Analytics" [ref=f4e83] [cursor=pointer]:
+        - /url: /analytics
+      - link "Finances" [ref=f4e87] [cursor=pointer]:
+        - /url: /finances/payouts
+      - button "Online Store" [ref=f4e94]
+      - link "Apps" [ref=f4e101] [cursor=pointer]:
+        - /url: /apps
+    - generic [ref=f4e108]:
+      - link "Settings" [ref=f4e109] [cursor=pointer]:
+        - /url: /settings
+      - generic [ref=f4e113]:
+        - generic [ref=f4e114]: AC
+        - generic [ref=f4e115]:
+          - paragraph [ref=f4e116]: Ava Chen
+          - paragraph [ref=f4e117]: ava@northstargoods.com
+  - generic [ref=f4e118]:
+    - banner [ref=f4e119]:
+      - button "Open search" [ref=f4e120]:
+        - generic [ref=f4e124]: Search
+        - generic [ref=f4e125]: ⌘K
+      - generic [ref=f4e126]:
+        - generic [ref=f4e127]: Demo data
+        - button "Help" [ref=f4e132]
+        - button "Notifications" [ref=f4e138]
+        - button "Account menu" [ref=f4e143]:
+          - generic [ref=f4e144]: AC
+    - main [ref=f4e147]:
+      - generic [ref=f4e180]:
+        - generic [ref=f4e181]:
+          - button "Orders" [ref=f4e182]
+          - heading "Create order" [level=1] [ref=f4e187]
+        - generic [ref=f4e188]:
+          - generic [ref=f4e189]:
+            - generic [ref=f4e190]:
+              - heading "Customer" [level=2] [ref=f4e193]
+              - generic [ref=f4e194]:
+                - generic [ref=f4e195]:
+                  - textbox "Search customers" [ref=f4e199]
+                  - combobox "Customer" [ref=f4e201] [cursor=pointer]:
+                    - option "QA Tester — qa-tester-mtwscxx4@example.com" [selected]
+                    - option "Silas Aldana — silas.aldana@example.com"
+                    - option "Tariq Osei — tariq.osei@example.com"
+                    - option "Theo Osei — theo.osei@example.com"
+                    - option "Omar Haddad — omar.haddad@example.com"
+                    - option "Iris Nguyen — iris.nguyen@example.com"
+                    - option "Owen Bergström — owen.bergstrm@example.com"
+                    - option "Isla Larsen — isla.larsen@example.com"
+                    - option "Diego Ibrahim — diego.ibrahim@example.com"
+                    - option "Chloe Moreau — chloe.moreau@example.com"
+                    - option "Ravi Bennett — ravi.bennett@example.com"
+                    - option "Andre Delgado — andre.delgado@example.com"
+                    - option "Aisha Haddad — aisha.haddad@example.com"
+                    - option "Mei Baptiste — mei.baptiste@example.com"
+                    - option "Clara Suzuki — clara.suzuki@example.com"
+                    - option "Andre Mendoza — andre.mendoza@example.com"
+                    - option "Noah Bennett — noah.bennett@example.com"
+                    - option "Noah Nguyen — noah.nguyen@example.com"
+                    - option "Iris Ramirez — iris.ramirez@example.com"
+                    - option "Silas Aldana — silas.aldana18@example.com"
+                    - option "Ava Larsen — ava.larsen@example.com"
+                    - option "Marcus Ibrahim — marcus.ibrahim@example.com"
+                    - option "Felix Chatterjee — felix.chatterjee@example.com"
+                    - option "Hana Kaur — hana.kaur@example.com"
+                    - option "Noah Eriksen — noah.eriksen@example.com"
+                    - option "Kenji Mendoza — kenji.mendoza@example.com"
+                    - option "Mei Kowalski — mei.kowalski@example.com"
+                    - option "Aisha Reyes — aisha.reyes@example.com"
+                    - option "Diego Larsen — diego.larsen@example.com"
+                    - option "Leo Dubois — leo.dubois@example.com"
+                    - option "Leo Osei-Bonsu — leo.oseibonsu@example.com"
+                    - option "Ingrid Andersen — ingrid.andersen@example.com"
+                    - option "Wren Marino — wren.marino@example.com"
+                    - option "Theo Nguyen — theo.nguyen@example.com"
+                    - option "Tessa Suzuki — tessa.suzuki@example.com"
+                    - option "Ingrid Kimura — ingrid.kimura@example.com"
+                    - option "Isla Lindqvist — isla.lindqvist@example.com"
+                    - option "Zoe Castellano — zoe.castellano@example.com"
+                    - option "Noah Kimura — noah.kimura@example.com"
+                    - option "Milo Tanaka — milo.tanaka@example.com"
+                    - option "Lucas Kimura — lucas.kimura@example.com"
+                    - option "Wren Bennett — wren.bennett@example.com"
+                    - option "Iris Larsen — iris.larsen@example.com"
+                    - option "Paulo Aldana — paulo.aldana@example.com"
+                    - option "Freya Ramirez — freya.ramirez@example.com"
+                    - option "Dmitri Larsen — dmitri.larsen@example.com"
+                    - option "Leo Haddad — leo.haddad@example.com"
+                    - option "Oscar Castellano — oscar.castellano@example.com"
+                    - option "Ravi Fitzgerald — ravi.fitzgerald@example.com"
+                    - option "Leo Rossi — leo.rossi@example.com"
+                - paragraph [ref=f4e202]:
+                  - generic [ref=f4e203]: QT
+                  - text: 1 QA Way, Portland OR
+            - generic [ref=f4e204]:
+              - generic [ref=f4e205]:
+                - generic [ref=f4e206]:
+                  - heading "Items" [level=2] [ref=f4e207]
+                  - generic [ref=f4e208]: Quantities of unfulfilled items count against inventory when the order is fulfilled
+                - button "Add item" [ref=f4e210]
+              - list [ref=f4e810]:
+                - listitem [ref=f4e811]:
+                  - generic [ref=f4e812]:
+                    - generic [ref=f4e813]: QA Test Product v2
+                    - generic [ref=f4e814]: $9.99 · QA-1
+                  - generic [ref=f4e815]:
+                    - button "Decrease" [ref=f4e816]
+                    - generic [ref=f4e818]: "1"
+                    - button "Increase" [ref=f4e819]
+                  - generic [ref=f4e821]: $9.99
+                  - button "Remove QA Test Product v2" [ref=f4e822]
+            - generic [ref=f4e214]:
+              - heading "Additional" [level=2] [ref=f4e217]
+              - generic [ref=f4e218]:
+                - generic [ref=f4e219]:
+                  - generic [ref=f4e220]:
+                    - generic [ref=f4e221]: Shipping
+                    - generic [ref=f4e223]:
+                      - generic: $
+                      - spinbutton "Shipping" [ref=f4e224]: "6.99"
+                  - generic [ref=f4e225]:
+                    - generic [ref=f4e226]: Order discount
+                    - generic [ref=f4e228]:
+                      - generic: $
+                      - spinbutton "Order discount" [ref=f4e229]: "0"
+                - generic [ref=f4e230]:
+                  - generic [ref=f4e231]:
+                    - generic [ref=f4e232]: Note
+                    - textbox "Note" [ref=f4e233]:
+                      - /placeholder: Internal note or instructions
+                  - generic [ref=f4e234]:
+                    - textbox "Add tag" [ref=f4e236]
+                    - generic [ref=f4e237]:
+                      - button "+ priority" [ref=f4e238]
+                      - button "+ gift" [ref=f4e239]
+                      - button "+ wholesale" [ref=f4e240]
+          - generic [ref=f4e241]:
+            - generic [ref=f4e242]:
+              - heading "Order summary" [level=2] [ref=f4e245]
+              - generic [ref=f4e246]:
+                - generic [ref=f4e247]:
+                  - generic [ref=f4e248]:
+                    - term [ref=f4e249]: Subtotal
+                    - definition [ref=f4e250]: $9.99
+                  - generic [ref=f4e251]:
+                    - term [ref=f4e252]: Shipping
+                    - definition [ref=f4e253]: $6.99
+                  - generic [ref=f4e254]:
+                    - term [ref=f4e255]: Tax (8%)
+                    - definition [ref=f4e256]: $0.80
+                  - generic [ref=f4e257]:
+                    - term [ref=f4e258]: Total
+                    - definition [ref=f4e259]: $17.78
+                - generic [ref=f4e260]: "Payment: pending"
+            - generic [ref=f4e262]:
+              - heading "What happens next" [level=3] [ref=f4e263]
+              - list [ref=f4e264]:
+                - listitem [ref=f4e265]:
+                  - strong [ref=f4e266]: Save as draft
+                  - text: keeps it as a draft you can invoice or collect payment on later.
+                - listitem [ref=f4e267]:
+                  - strong [ref=f4e268]: Collect payment
+                  - text: converts it to a live order marked as paid and reserves inventory.
+        - generic [ref=f4e270]:
+          - generic [ref=f4e271]: 1 item · total $17.78
+          - generic [ref=f4e272]:
+            - button "Save as draft" [ref=f4e273]
+            - button "Collect payment · $17.78" [ref=f4e826]

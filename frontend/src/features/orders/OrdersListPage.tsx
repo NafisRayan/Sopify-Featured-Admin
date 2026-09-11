@@ -263,7 +263,11 @@ export function OrdersTable({ mode, statusFilter }: { mode: 'all' | 'drafts'; st
         onRowClick={(o) => navigate(mode === 'drafts' ? `/draft-orders/${o.id}` : `/orders/${o.id}`)}
         hasAnyData={rows.length > 0}
         toolbarExtra={
-          mode === 'drafts' ? (
+          mode === 'all' ? (
+            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => navigate('/orders/new')}>
+              Create order
+            </Button>
+          ) : mode === 'drafts' ? (
             <Button
               size="sm"
               variant="primary"

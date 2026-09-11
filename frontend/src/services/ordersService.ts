@@ -1,7 +1,7 @@
 import { getStore } from '@/store/useStore'
 import { variantLevelAt } from '@/store/selectors'
 import { uid } from '@/lib/id'
-import { syncMutation } from './api'
+import { syncMutation, gqlLiteral, mutatePayload, IS_REMOTE } from './api'
 import { delay } from '@/lib/delay'
 import { roundMoney } from '@/lib/money'
 import { CURRENT_USER } from '@/lib/constants'
@@ -118,7 +118,7 @@ export async function markAsPaid(orderId: string): Promise<void> {
   const order = getStore().orders.find((o) => o.id === orderId)
   if (!order) throw new Error('Order not found')
   getStore().patchOrder(orderId, { paymentStatus: 'paid' })
-  syncMutation(`mutation { orderMarkAsPaid(id: ${JSON.stringify(orderId)}) { userErrors { message } } }`)
+  syncMutation(`mutation { orderMarkAsPaid(id: ${gqlLiteral(orderId)}) { userErrors { message } } }`)
   addTimeline(orderId, 'payment', `Payment of $${order.total.toFixed(2)} marked as received`)
 }
 
@@ -200,7 +200,7 @@ export async function cancelOrder(orderId: string, restock = true): Promise<void
       }
     }
   }
-  syncMutation(`mutation { orderCancel(id: ${JSON.stringify(orderId)}, restock: ${restock}) { userErrors { message } } }`)
+  syncMutation(`mutation { orderCancel(id: ${gqlLiteral(orderId)}, restock: ${restock}) { userErrors { message } } }`)
   store.patchOrder(orderId, {
     status: 'cancelled',
     cancelledAt: new Date().toISOString(),
@@ -211,14 +211,14 @@ export async function cancelOrder(orderId: string, restock = true): Promise<void
 
 export async function closeOrder(orderId: string): Promise<void> {
   await delay(250)
-  syncMutation(`mutation { orderClose(id: ${JSON.stringify(orderId)}) { userErrors { message } } }`)
+  syncMutation(`mutation { orderClose(id: ${gqlLiteral(orderId)}) { userErrors { message } } }`)
   getStore().patchOrder(orderId, { status: 'closed', closedAt: new Date().toISOString() })
   addTimeline(orderId, 'edit', 'Order archived')
 }
 
 export async function reopenOrder(orderId: string): Promise<void> {
   await delay(250)
-  syncMutation(`mutation { orderReopen(id: ${JSON.stringify(orderId)}) { userErrors { message } } }`)
+  syncMutation(`mutation { orderReopen(id: ${gqlLiteral(orderId)}) { userErrors { message } } }`)
   getStore().patchOrder(orderId, { status: 'open', closedAt: undefined })
   addTimeline(orderId, 'edit', 'Order unarchived')
 }
@@ -230,13 +230,14 @@ export async function addOrderNote(orderId: string, note: string): Promise<void>
   const order = getStore().orders.find((o) => o.id === orderId)
   if (!order) throw new Error('Order not found')
   getStore().patchOrder(orderId, { note })
-  syncMutation(`mutation { orderUpdate(id: ${JSON.stringify(orderId)}, order: { note: ${JSON.stringify(note)} }) { userErrors { message } } }`)
+  syncMutation(`mutation { orderUpdate(id: ${gqlLiteral(orderId)}, order: { note: ${gqlLiteral(note)} }) { userErrors { message } } }`)
   addTimeline(orderId, 'note', note)
 }
 
 export async function setOrderTags(orderId: string, tags: string[]): Promise<void> {
   await delay(200)
   getStore().patchOrder(orderId, { tags })
+  syncMutation(`mutation { orderUpdate(id: ${gqlLiteral(orderId)}, order: { tags: ${gqlLiteral(tags)} }) { userErrors { message } } }`)
 }
 
 export async function bulkAddTags(orderIds: string[], tags: string[]): Promise<void> {
@@ -263,6 +264,8 @@ export interface DraftInput {
   note?: string
   tags?: string[]
   email?: string
+  shippingPrice?: number
+  discountAmount?: number
 }
 
 function buildDraft(input: DraftInput): Order {
@@ -288,8 +291,9 @@ function buildDraft(input: DraftInput): Order {
     }
   })
   const subtotal = roundMoney(lineItems.reduce((s, li) => s + li.price * li.quantity, 0))
-  const shippingPrice = 6.99
-  const taxTotal = roundMoney(subtotal * 0.08)
+  const shippingPrice = input.shippingPrice ?? 6.99
+  const discountAmount = input.discountAmount ?? 0
+  const taxTotal = roundMoney((subtotal - discountAmount) * 0.08)
   const addr: Address | undefined = customer.defaultAddress
   const now = new Date().toISOString()
   return {
@@ -305,11 +309,12 @@ function buildDraft(input: DraftInput): Order {
     lineItems,
     shippingAddress: addr!,
     billingAddress: addr!,
-    shippingTitle: 'Standard shipping',
+    shippingTitle: shippingPrice === 0 ? 'Free shipping' : 'Standard shipping',
     shippingPrice,
     subtotal,
     taxTotal,
-    total: roundMoney(subtotal + shippingPrice + taxTotal),
+    total: roundMoney(subtotal - discountAmount + shippingPrice + taxTotal),
+    discountCode: discountAmount > 0 ? { code: 'CUSTOM', amount: discountAmount } : undefined,
     currency: 'USD',
     tags: input.tags ?? [],
     note: input.note,
@@ -323,6 +328,11 @@ function buildDraft(input: DraftInput): Order {
 
 export async function createDraft(input: DraftInput): Promise<Order> {
   await delay(350)
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload('draftOrderCreate', `draftOrderCreate(customerId: ${gqlLiteral(input.customerId)}, items: ${gqlLiteral(input.lineItems)}, note: ${gqlLiteral(input.note ?? null)}, tags: ${gqlLiteral(input.tags ?? [])}, shippingPrice: ${input.shippingPrice ?? 6.99}, discountAmount: ${input.discountAmount ?? 0}) { order { id name customerId email phone createdAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals } userErrors { field message } }`)
+    getStore().addOrder(entity as Order)
+    return entity as Order
+  }
   const draft = buildDraft(input)
   getStore().addOrder(draft)
   return draft
@@ -363,12 +373,14 @@ export async function convertDraft(orderId: string): Promise<string> {
       { id: uid('ev'), createdAt: new Date().toISOString(), type: 'created', message: `Draft converted to order ${name}`, author },
     ],
   })
+  syncMutation(`mutation { draftOrderConvert(id: ${gqlLiteral(orderId)}) { userErrors { message } } }`)
   return orderId
 }
 
 export async function deleteDrafts(ids: string[]): Promise<void> {
   await delay(250)
   getStore().removeOrders(ids)
+  syncMutation(`mutation { draftOrderDelete(ids: ${gqlLiteral(ids)}) { userErrors { message } } }`)
 }
 
 // ─── Abandoned checkouts ───────────────────────────────────────────────────

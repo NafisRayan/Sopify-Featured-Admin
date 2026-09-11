@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Archive, ArrowDown, ArrowUp, Bold, Copy, Eye, Italic, Link2, Plus,
-  Star, Trash2, TriangleAlert, ImageIcon,
+  Star, Trash2, TriangleAlert, ImageIcon, Upload,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import {
@@ -268,6 +268,21 @@ function MediaManager({ media, onChange }: { media: Product['media']; onChange: 
   const productId = media[0]?.productId
   const [url, setUrl] = useState('')
   const [adding, setAdding] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const uploadResult = async (file: File) => {
+    setUploading(true)
+    try {
+      const { uploadMedia } = await import('@/services/api')
+      const { url: uploadedUrl } = await uploadMedia(file)
+      await addMedia(productId!, uploadedUrl, file.name)
+      onChange()
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(e)
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const move = async (id: string, dir: -1 | 1) => {
     const ids = media.map((m) => m.id)
@@ -300,8 +315,24 @@ function MediaManager({ media, onChange }: { media: Product['media']; onChange: 
           className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[#c9c9c9] text-xs text-text-muted hover:border-accent hover:text-accent"
         >
           <ImageIcon size={16} />
-          Add image
+          Add via URL
         </button>
+        <label
+          className="flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[#c9c9c9] text-xs text-text-muted hover:border-accent hover:text-accent"
+        >
+          <Upload size={16} />
+          {uploading ? 'Uploading…' : 'Upload file'}
+          <input
+            type="file"
+            accept="image/*,video/mp4,video/webm,.pdf"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f && productId) void uploadResult(f)
+              e.target.value = ''
+            }}
+          />
+        </label>
       </div>
       <Modal
         open={adding}

@@ -411,6 +411,8 @@ export class OrdersService {
 
   // drafts
   async createDraft(input: any): Promise<any> {
+    const shippingPrice = input.shippingPrice ?? 6.99
+    const discountAmount = input.discountAmount ?? 0
     const customer = await this.prisma.customer.findUnique({ where: { id: input.customerId } })
     if (!customer) throw new Error('Select a customer')
     const lineItems: Record<string, unknown>[] = []
@@ -438,8 +440,8 @@ export class OrdersService {
         firstName: customer.firstName, lastName: customer.lastName, address1: '', city: '', province: '', country: '', zip: '',
       }
     const subtotal = roundMoney(lineItems.reduce((s: number, li: any) => s + li.price * li.quantity, 0))
-    const shipping = 6.99
-    const tax = roundMoney(subtotal * TAX_RATE)
+    const shipping = shippingPrice
+    const tax = roundMoney((subtotal - discountAmount) * TAX_RATE)
     const now = new Date()
     const order = await this.prisma.order.create({
       data: {
@@ -459,7 +461,8 @@ export class OrdersService {
         shippingPrice: shipping,
         subtotal,
         taxTotal: tax,
-        total: roundMoney(subtotal + shipping + tax),
+        total: roundMoney(subtotal - discountAmount + shipping + tax),
+    discountCode: discountAmount > 0 ? toJson({ code: 'CUSTOM', amount: discountAmount }) : null,
         currency: 'USD',
         tags: toJson(input.tags ?? []),
         note: input.note ?? null,

@@ -208,7 +208,7 @@ console.log('═══ 4. MUTATIONS: drafts ═══')
 
 console.log('═══ 5. MUTATIONS: customers/companies/segments ═══')
 {
-  const r = await mut('customerCreate', `customerCreate(customer: { firstName: "QA", lastName: "Tester", email: "qa-tester-${RUN}@example.com" }) { customer { id email } userErrors { message } }`)
+  const r = await mut('customerCreate', `customerCreate(customer: { firstName: "QA", lastName: "Tester", email: "qa-tester-${RUN}@example.com", defaultAddress: { address1: "1 QA Way", city: "Portland", province: "OR", country: "United States", zip: "97201" } }) { customer { id email } userErrors { message } }`)
   const cid = r.customer?.id
   check('customerCreate', !!cid)
   const dup = await mut('customerCreate', `customerCreate(customer: { firstName: "QA2", lastName: "T", email: "qa-tester-${RUN}@example.com" }) { userErrors { message } }`)
@@ -219,7 +219,7 @@ console.log('═══ 5. MUTATIONS: customers/companies/segments ═══')
   const t = await GQL(`{ customer(id: "${cid}") { ordersCount totalSpent } }`)
   check('customer derived stats on fresh customer', t.customer.ordersCount === 0 && t.customer.totalSpent === 0)
 
-  const co = await mut('companyCreate', `companyCreate(company: { name: "QA Corp ${RUN}", customerId: "${cid}", locationName: "QA HQ", priceListDiscountPercent: 12 }) { company { id name locations { name } } userErrors { message } }`)
+  const co = await mut('companyCreate', `companyCreate(company: { name: "QA Corp ${RUN}", customerId: "${cid}", locationName: "QA HQ", address: { address1: "1 QA Way", city: "Portland", province: "OR", country: "United States", zip: "97201" }, priceListDiscountPercent: 12 }) { company { id name locations { name } } userErrors { message } }`)
   const coid = co.company?.id
   check('companyCreate', !!coid, JSON.stringify(co.userErrors ?? []) + (co.__error ?? ''))
   const ca = await mut('companyContactAdd', `companyContactAdd(id: "${coid}", contact: { name: "QA Contact", email: "contact@qacorp.com" }) { company { contacts { email } } userErrors { message } }`)

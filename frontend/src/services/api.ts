@@ -28,6 +28,21 @@ export async function gqlRequest<T = any>(query: string, variables?: Record<stri
 /** GraphQL literal for inline values (JSON-compatible with GraphQL input literals) */
 export const q = (v: unknown): string => JSON.stringify(v ?? null)
 
+/** Serialize a JS value as a GraphQL input literal (unquoted object keys). */
+export function gqlLiteral(v: unknown): string {
+  if (v === null || v === undefined) return 'null'
+  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'null'
+  if (typeof v === 'boolean') return v ? 'true' : 'false'
+  if (typeof v === 'string') return JSON.stringify(v)
+  if (Array.isArray(v)) return `[${v.map(gqlLiteral).join(',')}]`
+  if (typeof v === 'object')
+    return `{${Object.entries(v)
+      .filter(([, x]) => x !== undefined)
+      .map(([k, x]) => `${k}: ${gqlLiteral(x)}`)
+      .join(',')}}`
+  return 'null'
+}
+
 /** Fire an inline mutation against the backend (remote mode only); reconciles after. */
 export function syncMutation(mutation: string): void {
   if (!IS_REMOTE) return
@@ -103,4 +118,32 @@ export async function refreshFromServer(): Promise<void> {
   } finally {
     refreshing = false
   }
+}
+
+/** Upload a file; remote mode stores on the backend, local mode returns a data URL. */
+export async function uploadMedia(file: File): Promise<{ url: string; name: string; sizeKb: number }> {
+  if (IS_REMOTE) {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch(`${API_URL}/uploads`, { method: 'POST', body: fd })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? 'Upload failed')
+    return res.json()
+  }
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error('Could not read file'))
+    reader.readAsDataURL(file)
+  })
+  return { url: dataUrl, name: file.name, sizeKb: Math.max(1, Math.round(file.size / 1024)) }
+}
+
+/** Server-first create: run mutation, return `{ field, userErrors }`. */
+export async function mutatePayload(field: string, mutation: string): Promise<{ entity: any; userErrors: any[] }> {
+  const data = await gqlRequest(`mutation _ { ${mutation} }`)
+  const payload: any = data?.[field] ?? {}
+  if (payload.userErrors?.length) throw new Error(payload.userErrors.map((e: any) => e.message).join('; '))
+  scheduleRefresh()
+  const entityKey = Object.keys(payload).find((k) => k !== 'userErrors')
+  return { entity: entityKey ? payload[entityKey] : null, userErrors: payload.userErrors ?? [] }
 }

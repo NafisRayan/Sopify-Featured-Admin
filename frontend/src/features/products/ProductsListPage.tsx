@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Archive, Copy, MoreVertical, PenLine, Plus, TagIcon, Trash2 } from 'lucide-react'
+import { Archive, Copy, FileUp, MoreVertical, PenLine, Plus, TagIcon, Trash2 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { DataTable, type Column, type FilterDef, type BulkActionDef } from '@/components/data-table/DataTable'
 import {
@@ -14,6 +14,7 @@ import {
   addTags, deleteProducts, duplicateProduct, removeTags, setProductsStatus,
 } from '@/services/productsService'
 import { useCan } from '@/lib/permissions'
+import { ProductImportModal } from './ProductImportModal'
 import { ExportButton } from '@/components/ExportButton'
 import type { Product, ProductStatus, SalesChannel } from '@/types'
 
@@ -46,6 +47,7 @@ export default function ProductsListPage() {
   const { toast } = useToast()
   const { confirm, confirmElement } = useConfirm()
   const [tagDrawer, setTagDrawer] = useState<TagDrawerState | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [tagDraft, setTagDraft] = useState<string[]>([])
 
   const can = {
@@ -278,6 +280,7 @@ export default function ProductsListPage() {
   return (
     <div>
       {confirmElement}
+      <ProductImportModal open={importOpen} onClose={() => setImportOpen(false)} onImported={() => {/* store already updated */}} />
       {tagDrawer && (
         <Drawer
           open
@@ -331,6 +334,9 @@ export default function ProductsListPage() {
         hasAnyData={products.length > 0}
         toolbarExtra={
           <>
+            <Button size="sm" icon={<FileUp size={13} />} onClick={() => setImportOpen(true)} disabled={!can.create}>
+              Import
+            </Button>
             <ExportButton
               filename="products"
               rows={products}
@@ -398,3 +404,5 @@ function RemoveTagsPicker({
     </div>
   )
 }
+
+// rendered at page level via fragment swap
