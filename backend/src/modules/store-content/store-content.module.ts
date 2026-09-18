@@ -5,6 +5,10 @@ import { PrismaModule } from '../../prisma/prisma.module'
 import { parseJson, toJson } from '../../common/helpers'
 import { mapCustomer } from '../../common/mappers'
 import { uid, slugify, roundMoney } from '../../common/ids'
+import { actorId, actorName } from '../../auth/actor'
+import { AuthorizationService } from '../../auth/authorization.service'
+import { AuthModule } from '../../auth/auth.module'
+import { currentStaff } from '../../auth/staff-context'
 
 // Consolidated store/content/metafields/staff/system module.
 // Pages, blog posts, files, menus, redirects, metaobjects, metafields,
@@ -13,11 +17,14 @@ import { uid, slugify, roundMoney } from '../../common/ids'
 
 @Injectable()
 export class StoreContentService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private authz: AuthorizationService,
+  ) {}
 
   private async logActivity(action: string, resource: string, resourceId?: string) {
     await this.prisma.activityEntry.create({
-      data: { id: uid('act'), at: new Date(), staffId: 'staff_owner', staffName: 'Ava Chen', action, resource, resourceId: resourceId ?? null },
+      data: { id: uid('act'), at: new Date(), staffId: actorId(), staffName: actorName(), action, resource, resourceId: resourceId ?? null },
     })
   }
 
@@ -262,6 +269,7 @@ export class StoreContentService {
     return { ...row, permissions: parseJson(row.permissions as string, {}) }
   }
   async updateStaff(id: string, input: any) {
+    await this.authz.assertStaffUpdateAllowed(currentStaff(), id, input)
     const member = await this.prisma.staffMember.findUnique({ where: { id } })
     if (!member) throw new Error('Staff member not found')
     const data: Record<string, unknown> = {}
@@ -976,7 +984,7 @@ export class StoreContentResolver {
 }
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AuthModule],
   providers: [StoreContentResolver, StoreContentService],
 })
 export class StoreContentModule {}

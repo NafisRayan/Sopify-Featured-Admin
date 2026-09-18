@@ -1,15 +1,14 @@
 import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
-import { syncMutation, gqlLiteral } from './api'
+import { syncMutation, gqlLiteral, mutatePayload, IS_REMOTE } from './api'
 import { delay } from '@/lib/delay'
 import { roundMoney } from '@/lib/money'
 import { CURRENT_USER } from '@/lib/constants'
-import { adjustInventory } from '@/services/inventoryService'
 import { customerStats } from '@/store/selectors'
 import type {
   Company, CustomerSegment, InventoryTransfer, GiftCard,
 } from '@/types/parity'
-import type { Customer, Address } from '@/types'
+import type { Customer, Address, InventoryHistoryEntry } from '@/types'
 
 const author = () => CURRENT_USER.name
 
@@ -23,6 +22,26 @@ function logActivity(action: string, resource: string, resourceId?: string): voi
     resource,
     resourceId,
   })
+}
+
+
+function recordTransferHistory(
+  variantId: string,
+  locationId: string,
+  change: number,
+  resultingAvailable: number,
+  reason: string,
+): InventoryHistoryEntry {
+  return {
+    id: uid('ih'),
+    variantId,
+    locationId,
+    change,
+    resultingAvailable,
+    reason,
+    createdAt: new Date().toISOString(),
+    author: author(),
+  }
 }
 
 // ─── B2B companies ─────────────────────────────────────────────────────────
@@ -116,20 +135,26 @@ export function matchesSegment(
 ): boolean {
   const stats = customerStats(customer.id)
   return filters.every((f) => {
+    const value = f.value.trim().toLowerCase()
+    if (f.column === 'tag') {
+      const tags = customer.tags.map((t) => t.toLowerCase())
+      if (f.relation === 'equals') return tags.includes(value)
+      if (f.relation === 'contains') return tags.some((t) => t.includes(value))
+      return false
+    }
     const actual =
       f.column === 'orders_count' ? stats.ordersCount
       : f.column === 'total_spent' ? stats.totalSpent
-      : f.column === 'tag' ? customer.tags.join('|').toLowerCase()
       : f.column === 'email_state' ? customer.emailMarketingConsent
       : f.column === 'city' ? customer.defaultAddress?.city ?? ''
       : customer.defaultAddress?.country ?? ''
-    const value = f.value.trim().toLowerCase()
     const numeric = Number(value)
     switch (f.relation) {
       case 'gt': return !Number.isNaN(numeric) && Number(actual) > numeric
       case 'lt': return !Number.isNaN(numeric) && Number(actual) < numeric
       case 'equals': return String(actual).toLowerCase() === value || actual === value
       case 'contains': return String(actual).toLowerCase().includes(value)
+      default: return false
     }
   })
 }
@@ -182,6 +207,21 @@ export async function createTransfer(input: {
   if (input.fromLocationId === input.toLocationId) throw new Error('Choose two different locations')
   if (input.lines.length === 0) throw new Error('Add at least one item')
   const store = getStore()
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload(
+      'inventoryTransferCreate',
+      `inventoryTransferCreate(input: ${gqlLiteral({
+        fromLocationId: input.fromLocationId,
+        toLocationId: input.toLocationId,
+        note: input.note,
+        lines: input.lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
+      })}) { transfer { id name status fromLocationId toLocationId note createdAt sentAt receivedAt lines { id variantId sku title variantTitle quantity receivedQuantity } } userErrors { field message } }`,
+    )
+    const transfer = entity as InventoryTransfer
+    store.upsertTransfer(transfer)
+    logActivity('Created transfer', 'transfer', transfer.id)
+    return transfer
+  }
   const seq = store.transfers.length + 1001
   const transfer: InventoryTransfer = {
     id: uid('tf'),
@@ -197,7 +237,6 @@ export async function createTransfer(input: {
     createdAt: new Date().toISOString(),
   }
   store.upsertTransfer(transfer)
-  syncMutation(`mutation { inventoryTransferCreate(input: ${gqlLiteral({ fromLocationId: input.fromLocationId, toLocationId: input.toLocationId, note: input.note, lines: input.lines })}) { userErrors { message } } }`)
   logActivity('Created transfer', 'transfer', transfer.id)
   return transfer
 }
@@ -208,14 +247,35 @@ export async function sendTransfer(transferId: string): Promise<void> {
   const t = store.transfers.find((x) => x.id === transferId)
   if (!t) throw new Error('Transfer not found')
   if (t.status !== 'draft') throw new Error('Transfer already sent')
-  // stock leaves the source location on send
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload(
+      'inventoryTransferSend',
+      `inventoryTransferSend(id: ${gqlLiteral(transferId)}) { transfer { id name status fromLocationId toLocationId note createdAt sentAt receivedAt lines { id variantId sku title variantTitle quantity receivedQuantity } } userErrors { field message } }`,
+    )
+    if (entity) store.upsertTransfer(entity as InventoryTransfer)
+    logActivity('Sent transfer', 'transfer', transferId)
+    return
+  }
   for (const line of t.lines) {
     const level = store.inventoryLevels.find((l) => l.variantId === line.variantId && l.locationId === t.fromLocationId)
     const current = level?.available ?? 0
-    await adjustInventory(line.variantId, t.fromLocationId, Math.max(0, current - line.quantity), `Outgoing ${t.name}`)
+    if (current < line.quantity) {
+      throw new Error(`Insufficient stock at source location (has ${current}, needs ${line.quantity})`)
+    }
   }
+  const historyEntries: InventoryHistoryEntry[] = []
+  for (const line of t.lines) {
+    const level = store.inventoryLevels.find((l) => l.variantId === line.variantId && l.locationId === t.fromLocationId)
+    const current = level?.available ?? 0
+    const nextAvailable = current - line.quantity
+    store.upsertInventoryLevel({
+      ...(level ?? { variantId: line.variantId, locationId: t.fromLocationId, available: current, committed: 0, unavailable: 0 }),
+      available: nextAvailable,
+    })
+    historyEntries.push(recordTransferHistory(line.variantId, t.fromLocationId, -line.quantity, nextAvailable, `Outgoing ${t.name}`))
+  }
+  store.addInventoryHistory(historyEntries)
   store.upsertTransfer({ ...t, status: 'in_transit', sentAt: new Date().toISOString() })
-  syncMutation(`mutation { inventoryTransferSend(id: ${gqlLiteral(transferId)}) { userErrors { message } } }`)
   logActivity('Sent transfer', 'transfer', transferId)
 }
 
@@ -225,18 +285,33 @@ export async function receiveTransfer(transferId: string): Promise<void> {
   const t = store.transfers.find((x) => x.id === transferId)
   if (!t) throw new Error('Transfer not found')
   if (t.status !== 'in_transit') throw new Error('Only in-transit transfers can be received')
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload(
+      'inventoryTransferReceive',
+      `inventoryTransferReceive(id: ${gqlLiteral(transferId)}) { transfer { id name status fromLocationId toLocationId note createdAt sentAt receivedAt lines { id variantId sku title variantTitle quantity receivedQuantity } } userErrors { field message } }`,
+    )
+    if (entity) store.upsertTransfer(entity as InventoryTransfer)
+    logActivity('Received transfer', 'transfer', transferId)
+    return
+  }
+  const historyEntries: InventoryHistoryEntry[] = []
   for (const line of t.lines) {
     const level = store.inventoryLevels.find((l) => l.variantId === line.variantId && l.locationId === t.toLocationId)
     const current = level?.available ?? 0
-    await adjustInventory(line.variantId, t.toLocationId, current + line.quantity, `Incoming ${t.name}`)
+    const nextAvailable = current + line.quantity
+    store.upsertInventoryLevel({
+      ...(level ?? { variantId: line.variantId, locationId: t.toLocationId, available: current, committed: 0, unavailable: 0 }),
+      available: nextAvailable,
+    })
+    historyEntries.push(recordTransferHistory(line.variantId, t.toLocationId, line.quantity, nextAvailable, `Incoming ${t.name}`))
   }
+  store.addInventoryHistory(historyEntries)
   store.upsertTransfer({
     ...t,
     status: 'received',
     receivedAt: new Date().toISOString(),
     lines: t.lines.map((l) => ({ ...l, receivedQuantity: l.quantity })),
   })
-  syncMutation(`mutation { inventoryTransferReceive(id: ${gqlLiteral(transferId)}) { userErrors { message } } }`)
   logActivity('Received transfer', 'transfer', transferId)
 }
 
@@ -274,6 +349,7 @@ export async function issueGiftCard(input: {
     ],
   }
   getStore().upsertGiftCard(card)
+  syncMutation(`mutation { giftCardCreate(input: ${gqlLiteral({ customerId: input.customerId, initialBalance: input.initialBalance, note: input.note, expiresAt: input.expiresAt })}) { userErrors { message } } }`)
   logActivity('Issued gift card', 'gift_card', card.id)
   return card
 }
@@ -292,8 +368,9 @@ export async function setGiftCardStatus(id: string, status: 'enabled' | 'disable
   store.upsertGiftCard({
     ...card,
     status,
-    history: [...card.history, { id: uid('gch'), at: new Date().toISOString(), type: 'disabled', amount: 0, note: status === 'disabled' ? `Disabled by ${author()}` : `Enabled by ${author()}` }],
+    history: [...card.history, { id: uid('gch'), at: new Date().toISOString(), type: status, amount: 0, note: status === 'disabled' ? `Disabled by ${author()}` : `Enabled by ${author()}` }],
   })
+  syncMutation(`mutation { ${status === 'disabled' ? 'giftCardDisable' : 'giftCardEnable'}(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
   logActivity(status === 'disabled' ? 'Disabled gift card' : 'Enabled gift card', 'gift_card', id)
 }
 
@@ -309,6 +386,7 @@ export async function adjustGiftCardBalance(id: string, newBalance: number, note
     balance: roundMoney(newBalance),
     history: [...card.history, { id: uid('gch'), at: new Date().toISOString(), type: 'adjusted', amount: change, note: note || `Adjusted by ${author()}` }],
   })
+  syncMutation(`mutation { giftCardBalanceAdjust(id: ${gqlLiteral(id)}, newBalance: ${newBalance}, note: ${gqlLiteral(note)}) { userErrors { message } } }`)
   logActivity('Adjusted gift card balance', 'gift_card', id)
 }
 

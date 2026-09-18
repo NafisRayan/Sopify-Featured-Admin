@@ -3,6 +3,7 @@ import { uid } from '@/lib/id'
 import { slugify } from '@/lib/validation'
 import { delay } from '@/lib/delay'
 import type { StorePage, BlogPost, FileAsset, NavMenu, MenuItem } from '@/types'
+import { syncMutation, gqlLiteral } from './api'
 
 // ─── Pages ─────────────────────────────────────────────────────────────────
 
@@ -25,17 +26,23 @@ export async function createPage(input: Partial<StorePage>): Promise<StorePage> 
     updatedAt: new Date().toISOString(),
   }
   store.addPage(page)
+  syncMutation(`mutation { pageCreate(page: ${gqlLiteral({ title: page.title, contentHtml: page.contentHtml, handle: page.handle, status: page.status, seoTitle: page.seoTitle, seoDescription: page.seoDescription })}) { userErrors { message } } }`)
   return page
 }
 
 export async function updatePage(id: string, patch: Partial<StorePage>): Promise<void> {
   await delay(300)
   getStore().patchPage(id, { ...patch, updatedAt: new Date().toISOString() })
+  const page = getStore().pages.find((p) => p.id === id)
+  if (page) {
+    syncMutation(`mutation { pageUpdate(id: ${gqlLiteral(id)}, page: ${gqlLiteral({ title: page.title, contentHtml: page.contentHtml, handle: page.handle, status: page.status, seoTitle: page.seoTitle, seoDescription: page.seoDescription })}) { userErrors { message } } }`)
+  }
 }
 
 export async function deletePages(ids: string[]): Promise<void> {
   await delay(250)
   getStore().removePages(ids)
+  syncMutation(`mutation { pageDelete(ids: ${gqlLiteral(ids)}) { userErrors { message } } }`)
 }
 
 // ─── Blog posts ────────────────────────────────────────────────────────────
@@ -54,17 +61,23 @@ export async function createPost(input: Partial<BlogPost>): Promise<BlogPost> {
     publishedAt: input.publishedAt,
   }
   getStore().addPost(post)
+  syncMutation(`mutation { blogPostCreate(post: ${gqlLiteral({ title: post.title, author: post.author, excerpt: post.excerpt, contentHtml: post.contentHtml, imageSrc: post.imageSrc, tags: post.tags, status: post.status, publishedAt: post.publishedAt })}) { userErrors { message } } }`)
   return post
 }
 
 export async function updatePost(id: string, patch: Partial<BlogPost>): Promise<void> {
   await delay(300)
   getStore().patchPost(id, patch)
+  const post = getStore().posts.find((p: BlogPost) => p.id === id)
+  if (post) {
+    syncMutation(`mutation { blogPostUpdate(id: ${gqlLiteral(id)}, post: ${gqlLiteral({ title: post.title, author: post.author, excerpt: post.excerpt, contentHtml: post.contentHtml, imageSrc: post.imageSrc, tags: post.tags, status: post.status, publishedAt: post.publishedAt })}) { userErrors { message } } }`)
+  }
 }
 
 export async function deletePosts(ids: string[]): Promise<void> {
   await delay(250)
   getStore().removePosts(ids)
+  syncMutation(`mutation { blogPostDelete(ids: ${gqlLiteral(ids)}) { userErrors { message } } }`)
 }
 
 // ─── Files ─────────────────────────────────────────────────────────────────
@@ -84,6 +97,7 @@ export async function addFileByUrl(url: string, name?: string): Promise<FileAsse
     uploadedAt: new Date().toISOString(),
   }
   getStore().addFiles([file])
+  syncMutation(`mutation { fileCreate(input: ${gqlLiteral({ url: file.src, name: file.name })}) { userErrors { message } } }`)
   return file
 }
 
@@ -101,6 +115,7 @@ export async function setFileAlt(id: string, alt: string): Promise<void> {
 export async function deleteFiles(ids: string[]): Promise<void> {
   await delay(250)
   getStore().removeFiles(ids)
+  syncMutation(`mutation { fileDelete(ids: ${gqlLiteral(ids)}) { userErrors { message } } }`)
 }
 
 // ─── Navigation menus ──────────────────────────────────────────────────────
@@ -109,8 +124,8 @@ export async function updateMenu(handle: NavMenu['handle'], items: MenuItem[]): 
   await delay(250)
   const store = getStore()
   store.setMenus(store.menus.map((m) => (m.handle === handle ? { ...m, items } : m)))
+  syncMutation(`mutation { menuUpdate(handle: ${gqlLiteral(handle)}, items: ${gqlLiteral(items)}) { userErrors { message } } }`)
 }
-
 /** Transform a nested list at parentId (null = root) immutably */
 export function withMenuItems(
   items: MenuItem[],

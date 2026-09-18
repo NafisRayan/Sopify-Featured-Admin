@@ -95,6 +95,9 @@ export default function OrderDetailPage() {
 
   const unfulfilledItems: OrderLineItem[] = useMemo(() => {
     if (!order) return []
+    if (order.status === 'cancelled' || order.paymentStatus === 'refunded' || order.fulfillmentStatus === 'returned' || order.fulfillmentStatus === 'fulfilled') {
+      return []
+    }
     const fulfilledIds = new Set(order.fulfillments.flatMap((f) => f.lineItemIds))
     return order.lineItems.filter((li) => li.requiresShipping && !fulfilledIds.has(li.id))
   }, [order])
@@ -210,7 +213,7 @@ export default function OrderDetailPage() {
                     Mark as paid
                   </Button>
                 )}
-                {can.edit && unfulfilledItems.length > 0 && order.status !== 'cancelled' && (
+                {can.edit && unfulfilledItems.length > 0 && order.status !== 'cancelled' && order.status !== 'closed' && order.paymentStatus !== 'refunded' && order.fulfillmentStatus !== 'returned' && (
                   <Button variant="primary" icon={<Package size={13} />} onClick={openFulfill}>
                     {order.fulfillmentStatus === 'partial' ? 'Fulfill remaining' : 'Fulfill'}
                   </Button>
@@ -283,8 +286,14 @@ export default function OrderDetailPage() {
                     {FULFILLMENT_STATUS_LABELS[order.fulfillmentStatus]}
                   </Badge>
                   <span className="text-xs text-text-muted">
-                    {unfulfilledItems.length > 0
-                      ? `${unfulfilledItems.length} unfulfilled item${unfulfilledItems.length === 1 ? '' : 's'}`
+                    {order.fulfillmentStatus === 'returned'
+                      ? 'Returned'
+                      : order.paymentStatus === 'refunded'
+                      ? 'Refunded'
+                      : unfulfilledItems.length > 0
+                      ? `${unfulfilledItems.length} unfulfilled item${unfulfilledItems.length === 1 ? '' : 's'}${order.status === 'closed' ? ' (archived)' : ''}`
+                      : order.status === 'closed'
+                      ? 'Archived'
                       : 'Everything fulfilled'}
                   </span>
                 </div>

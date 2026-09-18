@@ -45,14 +45,17 @@ export async function launchCampaign(id: string): Promise<void> {
     orders,
     revenue: Math.round(orders * (45 + Math.random() * 70)),
   })
+  syncMutation(`mutation { campaignLaunch(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }
 
 export async function completeCampaign(id: string): Promise<void> {
   await delay(300)
   getStore().patchCampaign(id, { status: 'completed' })
+  syncMutation(`mutation { campaignComplete(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }
 
 export async function deleteCampaign(id: string): Promise<void> {
   await delay(300)
   getStore().removeCampaign(id)
+  syncMutation(`mutation { campaignDelete(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }

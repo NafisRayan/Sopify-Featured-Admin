@@ -34,7 +34,10 @@ export function customerStats(customerId: string): CustomerStats {
   const orders = useStore
     .getState()
     .orders.filter((o) => o.customerId === customerId && o.status !== 'draft' && o.status !== 'cancelled')
-  const totalSpent = orders.reduce((s, o) => s + o.total, 0)
+  const totalSpent = orders.reduce((s, o) => {
+    const refunded = o.refunds.reduce((rSum, r) => rSum + r.amount, 0)
+    return s + Math.max(0, o.total - refunded)
+  }, 0)
   const lastOrder = orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
   return {
     ordersCount: orders.length,

@@ -82,6 +82,11 @@ export class CommerceService {
     if (input.combinations !== undefined) data.combinations = toJson(input.combinations)
     if (input.startsAt !== undefined) data.startsAt = new Date(input.startsAt)
     if (input.endsAt !== undefined) data.endsAt = input.endsAt ? new Date(input.endsAt) : null
+    const nextType = (data.type as string | undefined) ?? existing.type
+    const nextValue = data.value !== undefined ? data.value : existing.value
+    if (nextType === 'percentage' && nextValue != null && Number(nextValue) > 100) {
+      throw new Error('Percentage cannot exceed 100')
+    }
     await this.prisma.discount.update({ where: { id }, data })
     return this.discount(id)
   }
@@ -184,7 +189,7 @@ export class CommerceService {
     if (!card) throw new Error('Gift card not found')
     if (card.status === 'expired') throw new Error('Expired cards cannot be re-enabled')
     const history = parseJson<unknown[]>(card.history as string, [])
-    history.push({ id: uid('gch'), at: new Date().toISOString(), type: 'disabled', amount: 0, note: status === 'disabled' ? 'Disabled by staff' : 'Enabled by staff' })
+    history.push({ id: uid('gch'), at: new Date().toISOString(), type: status, amount: 0, note: status === 'disabled' ? 'Disabled by staff' : 'Enabled by staff' })
     await this.prisma.giftCard.update({ where: { id }, data: { status, history: toJson(history) } })
     return this.giftCard(id)
   }

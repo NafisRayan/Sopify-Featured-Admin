@@ -430,6 +430,7 @@ model StaffMember {
   id            String   @id
   name          String
   email         String   @unique
+  passwordHash  String?
   role          String   @default("staff")
   status        String   @default("active")
   lastActiveAt  DateTime?
@@ -500,6 +501,12 @@ model Plan {
   storeId       String
   @@schema("northstar")
 }
+model ShopCounter {
+  id    String @id
+  value Int    @default(1000)
+  @@schema("northstar")
+}
+
 
 model Locale {
   code      String  @id

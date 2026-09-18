@@ -30,6 +30,61 @@ function matchesRules(
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
+  private skuKey(sku: string): string {
+    return sku.trim().toLowerCase()
+  }
+
+  private async assertUniqueSkus(variants: { sku?: string }[], excludeProductId?: string): Promise<void> {
+    const incoming = variants.map((v) => this.skuKey(v.sku ?? '')).filter(Boolean)
+    const dupes = incoming.filter((sku, i) => incoming.indexOf(sku) !== i)
+    if (dupes.length) throw new Error(`SKU "${dupes[0]}" is used more than once in this product`)
+    const products = await this.prisma.product.findMany(
+      excludeProductId ? { where: { id: { not: excludeProductId } } } : undefined,
+    )
+    const taken = new Set<string>()
+    for (const product of products) {
+      for (const v of parseJson<{ sku?: string }[]>(product.variants as string, [])) {
+        if (v.sku) taken.add(this.skuKey(v.sku))
+      }
+    }
+    for (const sku of incoming) {
+      if (taken.has(sku)) throw new Error(`SKU "${sku}" is already in use by another product`)
+    }
+  }
+
+
+  private async uniqueCopySku(baseSku: string): Promise<string> {
+    if (!baseSku.trim()) return ''
+    let candidate = `${baseSku.trim()}-COPY`
+    let n = 2
+    while (true) {
+      try {
+        await this.assertUniqueSkus([{ sku: candidate }])
+        return candidate
+      } catch {
+        candidate = `${baseSku.trim()}-COPY-${n}`
+        n += 1
+      }
+    }
+  }
+
+  private async ensureVariantLevels(variants: { id: string; inventoryQuantity?: number }[]): Promise<void> {
+    const locations = await this.prisma.location.findMany({ where: { active: true } })
+    for (const v of variants) {
+      for (const loc of locations) {
+        const existing = await this.prisma.inventoryLevel.findUnique({
+          where: { variantId_locationId: { variantId: v.id, locationId: loc.id } },
+        })
+        if (existing) continue
+        const qty = loc.id === locations[0]?.id ? (v.inventoryQuantity ?? 0) : 0
+        await this.prisma.inventoryLevel.create({
+          data: { variantId: v.id, locationId: loc.id, available: qty, committed: 0, unavailable: 0 },
+        })
+      }
+    }
+  }
+
+
   private async levelsByVariant(): Promise<Map<string, number>> {
     const levels = await this.prisma.inventoryLevel.findMany()
     const map = new Map<string, number>()
@@ -73,6 +128,27 @@ export class ProductsService {
     const now = new Date()
     const id = uid('p')
     const title = input.title ?? ''
+
+    const variantsList = input.variants?.length
+      ? input.variants.map((v: any, i: number) => ({
+          id: v.id ?? `${id}_v${i + 1}`,
+          productId: id,
+          title: v.title ?? 'Default Title',
+          sku: v.sku ?? '',
+          barcode: v.barcode ?? null,
+          price: v.price ?? 0,
+          compareAtPrice: v.compareAtPrice ?? null,
+          costPerItem: v.costPerItem ?? null,
+          optionValues: v.optionValues ?? {},
+          weightGrams: v.weightGrams ?? null,
+          imageId: v.imageId ?? null,
+          available: v.available ?? true,
+          inventoryQuantity: v.inventoryQuantity ?? 0,
+        }))
+      : [{ id: `${id}_v1`, productId: id, title: 'Default Title', sku: '', barcode: null, price: 0, compareAtPrice: null, costPerItem: null, optionValues: {}, weightGrams: null, imageId: null, available: true, inventoryQuantity: 0 }]
+
+    await this.assertUniqueSkus(variantsList)
+
     const row = await this.prisma.product.create({
       data: {
         id,
@@ -86,24 +162,7 @@ export class ProductsService {
         collectionIds: toJson(input.collectionIds ?? []),
         channels: toJson(input.channels ?? ['online_store']),
         options: toJson(input.options ?? []),
-        variants: toJson(
-          input.variants?.length
-            ? input.variants.map((v: any, i: number) => ({
-                id: v.id ?? `${id}_v${i + 1}`,
-                productId: id,
-                title: v.title ?? 'Default Title',
-                sku: v.sku ?? '',
-                barcode: v.barcode ?? null,
-                price: v.price ?? 0,
-                compareAtPrice: v.compareAtPrice ?? null,
-                costPerItem: v.costPerItem ?? null,
-                optionValues: v.optionValues ?? {},
-                weightGrams: v.weightGrams ?? null,
-                imageId: v.imageId ?? null,
-                available: v.available ?? true,
-              }))
-            : [{ id: `${id}_v1`, productId: id, title: 'Default Title', sku: '', barcode: null, price: 0, compareAtPrice: null, costPerItem: null, optionValues: {}, weightGrams: null, imageId: null, available: true }],
-        ),
+        variants: toJson(variantsList),
         media: toJson(input.media ?? []),
         seo: toJson(input.seo ?? { title, description: '', handle: slugify(title) || id }),
         weightGrams: input.weightGrams ?? null,
@@ -113,6 +172,9 @@ export class ProductsService {
         updatedAt: now,
       },
     })
+
+    await this.ensureVariantLevels(variantsList)
+
     return (await this.decorate([row as unknown as Record<string, unknown>]))[0]
   }
 
@@ -125,7 +187,21 @@ export class ProductsService {
     for (const key of ['tags', 'collectionIds', 'channels', 'options', 'variants', 'media', 'seo']) {
       if (input[key] !== undefined) data[key] = toJson(input[key])
     }
+    if (input.variants) {
+      const oldVariants = parseJson<{ id: string }[]>(existing.variants as string, [])
+      const newIds = new Set(
+        (input.variants as { id?: string }[]).map((v) => v.id).filter(Boolean) as string[],
+      )
+      const removedIds = oldVariants.map((v) => v.id).filter((vid) => !newIds.has(vid))
+      if (removedIds.length) {
+        await this.prisma.inventoryLevel.deleteMany({ where: { variantId: { in: removedIds } } })
+      }
+      await this.assertUniqueSkus(input.variants, id)
+    }
     await this.prisma.product.update({ where: { id }, data })
+    if (input.variants) {
+      await this.ensureVariantLevels(input.variants)
+    }
     return this.product(id)
   }
 
@@ -163,7 +239,23 @@ export class ProductsService {
         channels: parseJson(source.channels as string, []),
         options: parseJson(source.options as string, []),
         variants: toJson(
-          parseJson<Record<string, unknown>[]>(source.variants as string, []).map((v, i) => ({ ...v, id: `${newId}_v${i + 1}`, productId: newId })),
+          await (async () => {
+            const sourceVariants = parseJson<Record<string, unknown>[]>(source.variants as string, [])
+            const copied = []
+            for (let i = 0; i < sourceVariants.length; i++) {
+              const v = sourceVariants[i]
+              const sku = v.sku ? await this.uniqueCopySku(String(v.sku)) : ''
+              copied.push({
+                ...v,
+                id: `${newId}_v${i + 1}`,
+                productId: newId,
+                sku,
+                inventoryQuantity: 0,
+              })
+            }
+            await this.assertUniqueSkus(copied)
+            return copied
+          })(),
         ),
         media: toJson(
           parseJson<Record<string, unknown>[]>(source.media as string, []).map((m, i) => ({ ...m, id: `${newId}_m${i + 1}`, productId: newId })),
@@ -176,6 +268,8 @@ export class ProductsService {
         updatedAt: new Date(),
       },
     })
+    const copiedVariants = parseJson<{ id: string }[]>(copy.variants as string, [])
+    await this.ensureVariantLevels(copiedVariants.map((v) => ({ ...v, inventoryQuantity: 0 })))
     return (await this.decorate([copy as unknown as Record<string, unknown>]))[0]
   }
 

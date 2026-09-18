@@ -7,6 +7,7 @@
 import { PrismaClient } from '@prisma/client'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { hashPassword } from '../src/auth/password.util'
 
 const prisma = new PrismaClient()
 const DATA = join(__dirname, '..', '..', 'frontend', 'src', 'data')
@@ -98,6 +99,7 @@ async function main(): Promise<void> {
     prisma.customer.deleteMany(),
     prisma.product.deleteMany(),
     prisma.storeSettings.deleteMany(),
+    prisma.shopCounter.deleteMany(),
     prisma.theme.deleteMany(),
     prisma.plan.deleteMany(),
   ])
@@ -160,9 +162,18 @@ async function main(): Promise<void> {
       const { sentAt, ...rest } = c
       await tx.campaign.create({ data: { ...(rest as object), sentAt: date(sentAt as string) } })
     }
+    const demoPassword = process.env.STAFF_DEMO_PASSWORD || 'northstar123'
+    const demoHash = hashPassword(demoPassword)
     for (const s of staff as Record<string, unknown>[]) {
       const { lastActiveAt, ...rest } = s
-      await tx.staffMember.create({ data: { ...(rest as object), lastActiveAt: date(lastActiveAt as string) } })
+      const status = rest.status as string
+      await tx.staffMember.create({
+        data: {
+          ...(rest as object),
+          lastActiveAt: date(lastActiveAt as string),
+          passwordHash: status === 'active' ? demoHash : null,
+        },
+      })
     }
     for (const p of pages as Record<string, unknown>[]) {
       const { createdAt, updatedAt, ...rest } = p
@@ -278,6 +289,17 @@ async function main(): Promise<void> {
       const { updatedAt, ...rest } = e
       await tx.metaobjectEntry.create({ data: { ...(rest as object), updatedAt: new Date(updatedAt as string) } })
     }
+    const orderRows = await tx.order.findMany({ where: { isDraft: false }, select: { name: true } })
+    let maxOrderNum = 1000
+    for (const o of orderRows) {
+      const n = Number(String(o.name).replace('#', ''))
+      if (Number.isFinite(n) && n < 900000) maxOrderNum = Math.max(maxOrderNum, n)
+    }
+    await tx.shopCounter.upsert({
+      where: { id: 'order_number' },
+      create: { id: 'order_number', value: maxOrderNum },
+      update: { value: maxOrderNum },
+    })
   }
 
   const counts = {

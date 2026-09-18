@@ -92,7 +92,6 @@ export class OrdersResolver {
       return { order: null, userErrors: [{ field: ['input'], message: (e as Error).message }] }
     }
   }
-
   @Mutation()
   async orderEdit(@Args('id') id: string, @Args('added') added: Record<string, any>[], @Args('removed') removed: Record<string, any>[]) {
     try {

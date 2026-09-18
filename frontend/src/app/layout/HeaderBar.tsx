@@ -5,6 +5,7 @@ import { useUiStore } from '@/store/uiStore'
 import { formatRelative, initials } from '@/lib/format'
 import { Badge, Popover, PortalMenu, useToast, type MenuItemDef } from '@/components/ui'
 import { markAllNotificationsRead, markNotificationRead } from '@/services/settingsService'
+import { IS_REMOTE, logout } from '@/services/api'
 import { cn } from '@/lib/cn'
 
 function Notifications() {
@@ -112,7 +113,17 @@ function AccountMenu() {
         { label: 'Simulate permissions as…', disabled: true, separatorBefore: true },
         ...simulateItems,
         { label: 'View online store', separatorBefore: true, onClick: () => toast('The storefront is not part of this admin demo', { tone: 'info' }) },
-        { label: 'Log out', destructive: true, onClick: () => toast('Logging out is disabled in the demo', { tone: 'warning' }) },
+        {
+          label: 'Log out',
+          destructive: true,
+          onClick: () => {
+            if (!IS_REMOTE) {
+              toast('Logging out is disabled in local demo mode', { tone: 'warning' })
+              return
+            }
+            void logout().then(() => window.location.reload())
+          },
+        },
       ]}
       trigger={
         <button className="flex items-center gap-1 rounded-lg p-1 pr-1.5 hover:bg-surface-hover" aria-label="Account menu">

@@ -2,19 +2,22 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Minus, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import { Badge, Button, Card, CardHeader, CardSection, Input, PageHeader, Select, TagInput, Textarea } from '@/components/ui'
+import { Badge, Button, Card, CardHeader, CardSection, Input, PageHeader, Select, TagInput, Textarea, useToast } from '@/components/ui'
 import { VariantPickerModal, type PickedVariant } from '@/components/VariantPickerModal'
 import { formatMoney, initials } from '@/lib/format'
 import { roundMoney } from '@/lib/money'
 import { createDraft } from '@/services/ordersService'
 import { IS_REMOTE } from '@/services/api'
 
-const TAX_RATE = 0.08
 
 /** Orders → Create order (full admin flow) */
 export default function OrderCreatePage() {
   const navigate = useNavigate()
+  const { toast } = useToast()
   const customers = useStore((s) => s.customers)
+  const companies = useStore((s) => s.companies)
+  const discounts = useStore((s) => s.discounts)
+  const settings = useStore((s) => s.settings)
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerId, setCustomerId] = useState('')
   const [items, setItems] = useState<PickedVariant[]>([])
@@ -23,8 +26,8 @@ export default function OrderCreatePage() {
   const [tags, setTags] = useState<string[]>([])
   const [shipping, setShipping] = useState('6.99')
   const [discount, setDiscount] = useState('0')
+  const [discountCode, setDiscountCode] = useState('')
   const [saving, setSaving] = useState<'draft' | 'paid' | null>(null)
-
   const customer = customers.find((c) => c.id === customerId)
   const customerOptions = useMemo(() => {
     const q = customerQuery.trim().toLowerCase()
@@ -37,13 +40,45 @@ export default function OrderCreatePage() {
     if (!customerId && customerOptions.length > 0) setCustomerId(customerOptions[0]!.id)
   }, [customerOptions, customerId])
 
+  const company = useMemo(() => companies.find((c) => c.customerId === customerId), [companies, customerId])
+  const b2bDiscountPct = company?.priceListDiscountPercent ?? 0
+
   const totals = useMemo(() => {
-    const subtotal = roundMoney(items.reduce((s, i) => s + i.price * i.quantity, 0))
-    const discountAmount = Math.min(Number(discount) || 0, subtotal)
+    const subtotal = roundMoney(
+      items.reduce((s, i) => {
+        const unitPrice = b2bDiscountPct > 0 ? roundMoney(i.price * (1 - b2bDiscountPct / 100)) : i.price
+        return s + unitPrice * i.quantity
+      }, 0),
+    )
+
+    let discountAmount = Math.min(Number(discount) || 0, subtotal)
+    const activeDisc = discountCode ? discounts.find((d) => d.code.toUpperCase() === discountCode.trim().toUpperCase() && d.status === 'active') : null
+    if (activeDisc) {
+      if (activeDisc.type === 'percentage') {
+        discountAmount = roundMoney(subtotal * ((activeDisc.value ?? 0) / 100))
+      } else if (activeDisc.type === 'fixed_amount') {
+        discountAmount = Math.min(subtotal, roundMoney(activeDisc.value ?? 0))
+      }
+    }
+
     const shippingPrice = Number(shipping) || 0
-    const tax = roundMoney((subtotal - discountAmount) * TAX_RATE)
-    return { subtotal, discountAmount, shippingPrice, tax, total: roundMoney(subtotal - discountAmount + shippingPrice + tax) }
-  }, [items, discount, shipping])
+    let tax = 0
+    if (!customer?.taxExempt) {
+      const rate = (settings.taxes?.taxRate ?? 8) / 100
+      const taxableBase = Math.max(0, subtotal - discountAmount) + (settings.taxes?.chargeTaxOnShipping ? shippingPrice : 0)
+      tax = roundMoney(taxableBase * rate)
+    }
+
+    const taxRate = settings.taxes?.taxRate ?? 8
+    return {
+      subtotal,
+      discountAmount,
+      shippingPrice,
+      tax,
+      taxRate,
+      total: roundMoney(Math.max(0, subtotal - discountAmount) + shippingPrice + tax),
+    }
+  }, [items, discount, discountCode, shipping, b2bDiscountPct, customer, settings, discounts])
 
   const setQty = (variantId: string, delta: number) =>
     setItems((prev) =>
@@ -62,6 +97,7 @@ export default function OrderCreatePage() {
         tags,
         shippingPrice: Number(shipping) || 0,
         discountAmount: totals.discountAmount,
+        discountCode: discountCode.trim() || undefined,
       })
       if (thenPaid) {
         if (IS_REMOTE) {
@@ -69,6 +105,7 @@ export default function OrderCreatePage() {
           const { mutatePayload } = await import('@/services/api')
           await mutatePayload('draftOrderConvert', `draftOrderConvert(id: ${JSON.stringify(draft.id)}) { order { id } userErrors { field message } }`)
           await mutatePayload('orderMarkAsPaid', `orderMarkAsPaid(id: ${JSON.stringify(draft.id)}) { order { id } userErrors { field message } }`)
+          useStore.getState().patchOrder(draft.id, { isDraft: false, status: 'open', paymentStatus: 'paid' })
           navigate(`/orders/${draft.id}`)
         } else {
           const { convertDraft, markAsPaid } = await import('@/services/ordersService')
@@ -79,6 +116,8 @@ export default function OrderCreatePage() {
       } else {
         navigate(`/draft-orders/${draft.id}`)
       }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to save order', { tone: 'critical' })
     } finally {
       setSaving(null)
     }
@@ -138,14 +177,16 @@ export default function OrderCreatePage() {
               </div>
             ) : (
               <ul className="divide-y divide-border">
-                {items.map((i) => (
+                {items.map((i) => {
+                  const unitPrice = b2bDiscountPct > 0 ? roundMoney(i.price * (1 - b2bDiscountPct / 100)) : i.price
+                  return (
                   <li key={i.variantId} className="flex items-center gap-3 px-4 py-3">
                     {i.imageSrc && <img src={i.imageSrc} alt="" className="h-10 w-10 shrink-0 rounded-md border border-border object-cover" />}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-medium">{i.title}</span>
                       <span className="block truncate text-xs text-text-muted">
                         {i.variantTitle && `${i.variantTitle} · `}
-                        {formatMoney(i.price)} · {i.sku || 'no SKU'}
+                        {formatMoney(unitPrice)} · {i.sku || 'no SKU'}
                       </span>
                     </span>
                     <span className="flex items-center gap-1">
@@ -157,12 +198,13 @@ export default function OrderCreatePage() {
                         <Plus size={11} />
                       </button>
                     </span>
-                    <span className="w-20 text-right text-[13px] font-medium">{formatMoney(i.price * i.quantity)}</span>
+                    <span className="w-20 text-right text-[13px] font-medium">{formatMoney(unitPrice * i.quantity)}</span>
                     <button aria-label={`Remove ${i.title}`} onClick={() => removeItem(i.variantId)} className="rounded p-1.5 text-text-muted hover:bg-critical-surface hover:text-critical-strong">
                       <Trash2 size={13} />
                     </button>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </Card>
@@ -170,9 +212,10 @@ export default function OrderCreatePage() {
           <Card padding={false}>
             <CardHeader title="Additional" />
             <CardSection>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <Input label="Shipping" type="number" step="0.01" min="0" prefix="$" value={shipping} onChange={(e) => setShipping(e.target.value)} />
-                <Input label="Order discount" type="number" step="0.01" min="0" prefix="$" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+                <Input label="Discount code" placeholder="e.g. SAVE10" value={discountCode} onChange={(e) => setDiscountCode(e.target.value)} />
+                <Input label="Custom discount" type="number" step="0.01" min="0" prefix="$" value={discount} onChange={(e) => setDiscount(e.target.value)} />
               </div>
               <div className="mt-3 space-y-3">
                 <Textarea label="Note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Internal note or instructions" />
@@ -193,7 +236,7 @@ export default function OrderCreatePage() {
                   <div className="flex justify-between"><dt className="text-text-muted">Discount</dt><dd className="text-critical-strong">−{formatMoney(totals.discountAmount)}</dd></div>
                 )}
                 <div className="flex justify-between"><dt className="text-text-muted">Shipping</dt><dd>{totals.shippingPrice === 0 ? 'Free' : formatMoney(totals.shippingPrice)}</dd></div>
-                <div className="flex justify-between"><dt className="text-text-muted">Tax (8%)</dt><dd>{formatMoney(totals.tax)}</dd></div>
+                <div className="flex justify-between"><dt className="text-text-muted">Tax ({totals.taxRate}%)</dt><dd>{formatMoney(totals.tax)}</dd></div>
                 <div className="flex justify-between border-t border-border pt-1.5 text-[15px] font-semibold"><dt>Total</dt><dd>{formatMoney(totals.total)}</dd></div>
               </dl>
               <div className="mt-4 space-y-2">

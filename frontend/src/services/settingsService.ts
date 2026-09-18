@@ -20,24 +20,22 @@ export async function updateStoreSettings(patch: Partial<StoreSettings>): Promis
 export async function togglePaymentProvider(id: string): Promise<void> {
   await delay(250)
   const store = getStore()
-  store.updateSettings({
-    payments: store.settings.payments.map((p: PaymentProvider) =>
-      p.id === id ? { ...p, enabled: !p.enabled } : p,
-    ),
-  })
+  const payments = store.settings.payments.map((p: PaymentProvider) =>
+    p.id === id ? { ...p, enabled: !p.enabled } : p,
+  )
+  await updateStoreSettings({ payments })
 }
 
 export async function setPaymentTestMode(id: string, testMode: boolean): Promise<void> {
   await delay(200)
   const store = getStore()
-  store.updateSettings({
-    payments: store.settings.payments.map((p) => (p.id === id ? { ...p, testMode } : p)),
-  })
+  const payments = store.settings.payments.map((p) => (p.id === id ? { ...p, testMode } : p))
+  await updateStoreSettings({ payments })
 }
 
 export async function saveShippingRates(rates: ShippingRate[]): Promise<void> {
   await delay(300)
-  getStore().updateSettings({ shipping: rates })
+  await updateStoreSettings({ shipping: rates })
 }
 
 // ─── Staff & permissions (§26) ─────────────────────────────────────────────
@@ -64,6 +62,7 @@ export async function inviteStaff(input: { name: string; email: string; role: St
     },
   }
   store.addStaff(member)
+  syncMutation(`mutation { staffMemberCreate(input: ${gqlLiteral({ name: input.name, email: input.email, role: input.role })}) { userErrors { message } } }`)
   return member
 }
 
@@ -79,11 +78,19 @@ export async function updateStaffPermissions(
   store.patchStaff(id, {
     permissions: { ...member.permissions, [resource]: actions },
   })
+  syncMutation(`mutation { staffMemberPermissionSet(id: ${gqlLiteral(id)}, resource: ${gqlLiteral(resource)}, actions: ${gqlLiteral(actions)}) { userErrors { message } } }`)
 }
 
 export async function updateStaff(id: string, patch: Partial<StaffMember>): Promise<void> {
   await delay(250)
   getStore().patchStaff(id, patch)
+  const args = [
+    `id: ${gqlLiteral(id)}`,
+    ...(patch.name !== undefined ? [`name: ${gqlLiteral(patch.name)}`] : []),
+    ...(patch.email !== undefined ? [`email: ${gqlLiteral(patch.email)}`] : []),
+    ...(patch.role !== undefined ? [`role: ${gqlLiteral(patch.role)}`] : []),
+  ].join(', ')
+  syncMutation(`mutation { staffMemberUpdate(${args}) { userErrors { message } } }`)
 }
 
 export async function setStaffStatus(id: string, status: StaffMember['status']): Promise<void> {
@@ -91,13 +98,14 @@ export async function setStaffStatus(id: string, status: StaffMember['status']):
   const owner = getStore().staff.find((s) => s.id === id)
   if (owner?.role === 'owner') throw new Error('The store owner’s access cannot be changed')
   getStore().patchStaff(id, { status })
+  syncMutation(`mutation { staffMemberSetStatus(id: ${gqlLiteral(id)}, status: ${gqlLiteral(status)}) { userErrors { message } } }`)
 }
-
 export async function removeStaff(id: string): Promise<void> {
   await delay(300)
   const member = getStore().staff.find((s) => s.id === id)
   if (member?.role === 'owner') throw new Error('The store owner cannot be removed')
   getStore().removeStaff(id)
+  syncMutation(`mutation { staffMemberDelete(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }
 
 // ─── Theme / online store ──────────────────────────────────────────────────
@@ -105,6 +113,7 @@ export async function removeStaff(id: string): Promise<void> {
 export async function updateTheme(patch: Partial<ThemeSettings>): Promise<void> {
   await delay(300)
   getStore().updateTheme(patch)
+  syncMutation(`mutation { themeUpdate(value: ${gqlLiteral(patch)}) { activeTheme } }`)
 }
 
 export async function publishTheme(id: string): Promise<void> {
@@ -119,6 +128,7 @@ export async function publishTheme(id: string): Promise<void> {
     })),
   )
   store.updateTheme({ activeTheme: theme.name })
+  syncMutation(`mutation { themePublish(id: ${gqlLiteral(id)}) { storeName } }`)
 }
 
 export async function addThemeToLibrary(name: string): Promise<ThemeLibraryEntry> {
@@ -133,6 +143,7 @@ export async function addThemeToLibrary(name: string): Promise<ThemeLibraryEntry
     addedAt: new Date().toISOString(),
   }
   store.setThemeLibrary([...store.themeLibrary, entry])
+  syncMutation(`mutation { themeLibraryAdd(name: ${gqlLiteral(name)}) { id } }`)
   return entry
 }
 
@@ -143,6 +154,7 @@ export async function deleteTheme(id: string): Promise<void> {
   if (!theme) throw new Error('Theme not found')
   if (theme.role === 'current') throw new Error('Cannot delete the live theme')
   store.setThemeLibrary(store.themeLibrary.filter((t) => t.id !== id))
+  syncMutation(`mutation { themeLibraryDelete(id: ${gqlLiteral(id)}) { storeName } }`)
 }
 
 function slugName(name: string): string {
@@ -157,6 +169,7 @@ export async function installApp(id: string): Promise<void> {
   const suggestion = store.appSuggestions.find((a) => a.id === id)
   if (!suggestion) throw new Error('App not found')
   store.addApp({ ...suggestion, id: uid('app'), status: 'installed' })
+  syncMutation(`mutation { appInstall(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }
 
 export async function uninstallApp(id: string): Promise<void> {
@@ -164,6 +177,7 @@ export async function uninstallApp(id: string): Promise<void> {
   const app = getStore().apps.find((a) => a.id === id)
   if (!app) throw new Error('App not found')
   getStore().removeApp(id)
+  syncMutation(`mutation { appUninstall(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }
 
 export async function toggleApp(id: string): Promise<void> {
@@ -172,17 +186,20 @@ export async function toggleApp(id: string): Promise<void> {
   const app = store.apps.find((a) => a.id === id)
   if (!app) throw new Error('App not found')
   store.patchApp(id, { status: app.status === 'installed' ? 'disabled' : 'installed' })
+  syncMutation(`mutation { appToggle(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }
 
 // ─── Notifications / tasks ─────────────────────────────────────────────────
 
 export async function markNotificationRead(id: string): Promise<void> {
   getStore().patchNotification(id, { read: true })
+  syncMutation(`mutation { notificationMarkRead(id: ${gqlLiteral(id)}) { storeName } }`)
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
   await delay(150)
   getStore().markAllNotificationsRead()
+  syncMutation(`mutation { notificationMarkAllRead { storeName } }`)
 }
 
 export async function toggleTask(id: string): Promise<void> {

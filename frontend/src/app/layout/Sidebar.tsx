@@ -87,6 +87,7 @@ export function Sidebar() {
       children: [
         { label: 'Themes', to: '/online-store' },
         { label: 'Navigation', to: '/online-store/navigation' },
+        { label: 'URL redirects', to: '/online-store/redirects' },
         { label: 'Preferences', to: '/online-store/preferences' },
       ],
     },

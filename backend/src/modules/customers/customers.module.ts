@@ -15,9 +15,15 @@ export class CustomersService {
   async statsFor(customerId: string) {
     const orders = await this.prisma.order.findMany({
       where: { customerId, status: { notIn: ['draft', 'cancelled'] } },
-      select: { total: true, createdAt: true },
+      select: { total: true, refunds: true, createdAt: true },
     })
-    const totalSpent = roundMoney(orders.reduce((s, o) => s + o.total, 0))
+    const totalSpent = roundMoney(
+      orders.reduce((s, o) => {
+        const refunds = parseJson<{ amount: number }[]>(o.refunds as string, [])
+        const refunded = refunds.reduce((rSum, r) => rSum + r.amount, 0)
+        return s + Math.max(0, o.total - refunded)
+      }, 0),
+    )
     const last = orders.sort((a, b) => b.createdAt.toISOString().localeCompare(a.createdAt.toISOString()))[0]
     return { ordersCount: orders.length, totalSpent, lastOrderAt: last?.createdAt ?? null }
   }
@@ -212,14 +218,19 @@ export class CustomersService {
   async matchesSegment(customer: Record<string, unknown>, filters: { column: string; relation: string; value: string }[]): Promise<boolean> {
     const stats = await this.statsFor(customer.id as string)
     return filters.every((f) => {
+      const value = f.value.trim().toLowerCase()
+      if (f.column === 'tag') {
+        const tags = parseJson<string[]>(customer.tags as string, []).map((t) => t.toLowerCase())
+        if (f.relation === 'equals') return tags.includes(value)
+        if (f.relation === 'contains') return tags.some((t) => t.includes(value))
+        return false
+      }
       const actual =
         f.column === 'orders_count' ? stats.ordersCount
         : f.column === 'total_spent' ? stats.totalSpent
-        : f.column === 'tag' ? parseJson<string[]>(customer.tags as string, []).join('|').toLowerCase()
         : f.column === 'email_state' ? customer.emailMarketingConsent
         : f.column === 'city' ? (parseJson<{ city?: string }>(customer.defaultAddress as string, {})?.city ?? '')
         : (parseJson<{ country?: string }>(customer.defaultAddress as string, {})?.country ?? '')
-      const value = f.value.trim().toLowerCase()
       const numeric = Number(value)
       switch (f.relation) {
         case 'gt': return !Number.isNaN(numeric) && Number(actual) > numeric

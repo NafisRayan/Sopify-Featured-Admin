@@ -119,6 +119,7 @@ export interface OrderLineItem {
   totalDiscount: number
   requiresShipping: boolean
   imageSrc?: string
+  restockedQty?: number
 }
 
 export type TimelineEventType =
@@ -456,6 +457,9 @@ export interface StoreSettings {
     abandonedCheckout: boolean
     customerWelcome: boolean
   }
+  pageTitle?: string
+  metaDescription?: string
+  passwordProtected?: boolean
 }
 
 // ─── Notifications & tasks ─────────────────────────────────────────────────

@@ -26,6 +26,7 @@ const SECTION_TITLES: Record<string, string> = {
   activity: 'Activity log',
   metafields: 'Metafields',
   general: 'General',
+  billing: 'Plan and billing',
   payments: 'Payments',
   checkout: 'Checkout',
   shipping: 'Shipping and delivery',
@@ -219,6 +220,77 @@ export default function SettingsSectionPage() {
               </Button>
             </CardSection>
           </DividedCard>
+        </div>
+      )}
+      {/* ── Billing ── */}
+      {section === 'billing' && (
+        <div className="space-y-4">
+          <DividedCard>
+            <CardHeader title="Current plan" subtitle="Your active Shopify plan and renewal terms" />
+            <CardSection>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-semibold">{planInfo?.name ?? 'Shopify Basic'}</span>
+                    <Badge tone="success" dot>{planInfo?.status ?? 'active'}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-text-muted">
+                    Billed annually · Renews in {planInfo?.trialDaysLeft ?? 365} days
+                  </p>
+                </div>
+                <Button variant="secondary" onClick={() => toast('Plan changes are managed by the store owner')}>
+                  Change plan
+                </Button>
+              </div>
+            </CardSection>
+            <CardSection className="border-t border-border bg-[#fafafa]">
+              <p className="text-xs text-text-muted">
+                Need more staff accounts or custom reports? Upgrade to Shopify Advanced.
+              </p>
+            </CardSection>
+          </DividedCard>
+
+          <DividedCard>
+            <CardHeader title="Payment method" subtitle="Cards on file used for subscription charges" />
+            <CardSection>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="rounded border border-border bg-[#f6f6f7] px-2 py-1 text-xs font-medium">VISA</span>
+                  <div>
+                    <span className="text-[13px] font-medium">Ending in 4242</span>
+                    <span className="block text-xs text-text-muted">Expires 12/28 · Primary payment method</span>
+                  </div>
+                </div>
+                <Button variant="secondary" size="sm" onClick={() => toast('Payment method updated')}>Replace</Button>
+              </div>
+            </CardSection>
+          </DividedCard>
+
+          <Card padding={false}>
+            <CardHeader title="Recent invoices" subtitle="Billing history for subscriptions and transaction fees" />
+            <ul className="divide-y divide-border">
+              <li className="flex items-center justify-between px-4 py-3 text-[13px]">
+                <div>
+                  <span className="font-medium">INV-2026-009</span>
+                  <span className="block text-xs text-text-muted">Sep 1, 2026 · Subscription</span>
+                </div>
+                <div className="text-right">
+                  <span className="font-medium">$39.00</span>
+                  <Badge tone="success">Paid</Badge>
+                </div>
+              </li>
+              <li className="flex items-center justify-between px-4 py-3 text-[13px]">
+                <div>
+                  <span className="font-medium">INV-2026-008</span>
+                  <span className="block text-xs text-text-muted">Aug 1, 2026 · Subscription</span>
+                </div>
+                <div className="text-right">
+                  <span className="font-medium">$39.00</span>
+                  <Badge tone="success">Paid</Badge>
+                </div>
+              </li>
+            </ul>
+          </Card>
         </div>
       )}
 

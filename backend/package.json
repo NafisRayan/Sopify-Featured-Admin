@@ -5,13 +5,17 @@
   "description": "NestJS + GraphQL backend for the Northstar Goods admin (Shopify Admin API-style surface)",
   "scripts": {
     "build": "prisma generate && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
     "start": "prisma generate && nest start",
     "start:dev": "prisma generate && nest start --watch",
     "start:prod": "node dist/main.js",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "seed": "tsx prisma/seed.ts",
-    "seed:reset": "tsx prisma/seed.ts --reset"
+    "seed:reset": "tsx prisma/seed.ts --reset",
+    "check:authz": "node scripts/check-mutation-permissions.mjs",
+    "check:seed": "node scripts/check-seed-syntax.mjs",
+    "check": "npm run check:authz && npm run check:seed && npm run build"
   },
   "dependencies": {
     "@apollo/server": "^4.11.0",

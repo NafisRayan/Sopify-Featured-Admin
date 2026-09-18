@@ -25,30 +25,30 @@ Comparison of this backend's GraphQL surface against the Shopify Admin GraphQL A
 
 | Shopify domain | Our query/mutation surface | Status |
 |---|---|---|
-| Products (Product, Variant, Option, Media, Publication) | `product(s)`, `productCreate/Update/Delete/Duplicate`, `productStatusSet`, `productAddTags/RemoveTags`, `productMediaReorder`, options & variants via `ProductInput`, **CSV import** + **multipart media upload** (REST `/uploads`, files served statically) | ✅ Full (admin-side) |
-| Collections (Smart/Manual) | `collection(s)`, `collectionCreate/Update/Delete`, `collectionAddProducts/RemoveProducts`, smart-rule evaluation server-side | ✅ Full |
-| Orders (Order, LineItem, Fulfillment, Refund, Transaction, Risk) | `order(s)`, `orderMarkAsPaid`, `orderCancel`, `orderClose/Reopen`, `orderFulfill`, `orderRefund`, `orderEdit`, risk fields, timeline + **full Create Order UI** (customer/variant pickers, discounts, shipping, collect payment), **packing-slip & invoice print templates** | ✅ Full (admin-side) |
-| Draft orders (DraftOrder, invoice) | `draftOrders`, `draftOrderCreate/Update/Delete`, `draftOrderConvert`, `draftOrderInvoiceSend`, **Create Order UI** builds drafts with custom shipping/discounts | ✅ Full |
-| Returns & exchanges (Return, ReturnLine) | `returnCreate`, `returnClose`, `returnsForOrder`, restock + refund semantics | ✅ Full (lighter than Shopify's exchange variants) |
-| Abandoned checkouts | `abandonedCheckouts`, `abandonedCheckoutRecoverySend`, `abandonedCheckoutConvert` | ✅ Full |
-| Customers (Customer, Address, consent) | `customer(s)`, `customerCreate/Update/Delete`, tags, addresses, default address, consent, derived stats | ✅ Full |
-| B2B (Company, CompanyLocation, CompanyContact, PriceList) | `companies`, `companyCreate/Update/Delete`, `companyLocationAdd`, `companyContactAdd`, price-list discount % | ✅ Core (no catalog-per-company publishing) |
-| Customers segments (Segment, query language) | `segments`, `segment`, `segmentMembers`, `segmentCreate/Update/Delete` with simplified filter DSL | ✅ Core (subset of Shopify QueryLanguage) |
-| Inventory (InventoryLevel, Item, Adjustment) | `inventoryLevels`, `inventoryAdjust`, `inventoryBulkAdjust`, `inventoryHistory` | ✅ Full |
-| Shipping & fulfillment (FulfillmentOrder, Location) | fulfillment via `orderFulfill` (per-item, location, tracking), `locations`, `locationCreate/Update` | ✅ Core (no shipping profiles/zones editor, no labels) |
-| Inventory transfers (private API parity) | `transfers`, `inventoryTransferCreate/Send/Receive` with stock movement + history | ✅ Full |
-| Discounts (DiscountCodeBasic/Bxgy/FreeShipping, combinations) | `discounts`, `discountCreate/Update/Delete/StatusSet`, all 4 types, combinations | ✅ Full |
-| Marketing (Campaign, activity) | `campaigns`, `campaignCreate/Launch/Complete/Delete`, attributed metrics | ✅ Core (marketing activities are app-owned in Shopify) |
-| Shopify Payments (Payout, BalanceTransaction) | `payouts`, `balanceTransactions` (charges/refunds/fees derived from orders) | ✅ Read-model (no real payment processing) |
-| Gift cards | `giftCards`, `giftCardCreate/Disable/Enable/BalanceAdjust`, history | ✅ Full |
-| Online store (Page, Article/Blog, Menu, Redirect, File) | `pages`, `blogPosts`, `files`, `menus`, `redirects` + full CRUD sets | ✅ Full |
-| Metafields (definitions + values) | `metafieldDefinitions`, `metafields`, `metafieldDefinitionCreate/Delete`, `metafieldsSet` | ✅ Full |
-| Metaobjects | `metaobjectDefinitions`, `metaobjectEntries` + create/update/delete | ✅ Core |
-| Access (StaffMember, permissions) | `staff`, `staffMemberCreate/Update/Delete`, `staffMemberPermissionSet`, `staffMemberSetStatus`, `activity` audit log | ✅ Full |
-| Shop (Shop, Plan) | `shop`, `settingsUpdate`, plan card, locales (`localeAdd/Remove`), markets (`marketUpdate`) | ✅ Full |
-| Analytics | Computed client-side from order data via the same APIs (reports are Shopify-internal) | ✅ Equivalent output |
-| Apps | `apps`, `appInstall/Uninstall/Toggle` (simulated catalog) | ✅ Demo |
-| Webhooks / Bulk operations / Billing / Privacy / Cart / Checkout branding | — | ⛔ Intentionally out of scope (platform infrastructure, not admin features) |
+| Products (Product, Variant, Option, Media, Publication) | `product(s)`, `productCreate/Update/Delete/Duplicate`, `productStatusSet`, `productAddTags/RemoveTags`, `productMediaReorder`, options & variants via `ProductInput`, REST `/uploads` with auth check | 🔶 Core (admin-side; no multi-channel publishing) |
+| Collections (Smart/Manual) | `collection(s)`, `collectionCreate/Update/Delete`, `collectionAddProducts/RemoveProducts`, smart-rule evaluation | 🔶 Core (rule evaluation on save) |
+| Orders (Order, LineItem, Fulfillment, Refund, Transaction, Risk) | `order(s)`, `orderMarkAsPaid`, `orderCancel`, `orderClose/Reopen`, `orderFulfill`, `orderRefund`, `orderEdit`, inventory ledger reservation, status guards, risk analysis, timeline | 🔶 Core (admin-side; transactions recorded on mark-paid/refund) |
+| Draft orders (DraftOrder, invoice) | `draftOrders`, `draftOrderCreate/Update/Delete`, `draftOrderConvert`, `draftOrderInvoiceSend`, discounts & tax-exempt calculation | 🔶 Core (admin-side) |
+| Returns & exchanges (Return, ReturnLine) | `returnCreate`, `returnClose`, `returnsForOrder`, restock at fulfillment location + refund semantics | 🔶 Core (staff return resolution) |
+| Abandoned checkouts | `abandonedCheckouts`, `abandonedCheckoutRecoverySend`, `abandonedCheckoutConvert` | 🔶 Partial (recovery state flag and conversion flow) |
+| Customers (Customer, Address, consent) | `customer(s)`, `customerCreate/Update/Delete`, tags, addresses, default address, consent, derived stats with refund deduction | 🔶 Core (admin-side) |
+| B2B (Company, CompanyLocation, CompanyContact, PriceList) | `companies`, `companyCreate/Update/Delete`, `companyLocationAdd`, `companyContactAdd`, price-list discount % applied to order creation | 🔶 Core (no catalog-per-company publishing) |
+| Customers segments (Segment, query language) | `segments`, `segment`, `segmentMembers`, `segmentCreate/Update/Delete` with tag/spend/orders filter DSL | 🔶 Core (subset of Shopify QueryLanguage) |
+| Inventory (InventoryLevel, Item, Adjustment) | `inventoryLevels`, `inventoryAdjust`, `inventoryBulkAdjust`, `inventoryHistory`, on-hand / committed ledger | 🔶 Core |
+| Shipping & fulfillment (FulfillmentOrder, Location) | fulfillment via `orderFulfill` (per-item, location, tracking), `locations`, `locationCreate/Update` | 🔶 Core (no carrier API live rates or shipping labels) |
+| Inventory transfers (private API parity) | `transfers`, `inventoryTransferCreate/Send/Receive` with stock movement + single mutation sync | 🔶 Core |
+| Discounts (DiscountCodeBasic/Bxgy/FreeShipping, combinations) | `discounts`, `discountCreate/Update/Delete/StatusSet`, code lookup & validation at order create, usedCount increments | 🔶 Core (code & fixed/percentage calculation) |
+| Marketing (Campaign, activity) | `campaigns`, `campaignCreate/Launch/Complete/Delete`, attributed order metrics | 🔶 Partial (demo simulation) |
+| Shopify Payments (Payout, BalanceTransaction) | `payouts`, `balanceTransactions` (charges/refunds/fees recorded on orders) | 🔶 Read-model (derived transactions; no live gateway processor) |
+| Gift cards | `giftCards`, `giftCardCreate/Disable/Enable/BalanceAdjust`, history with correct status tracking | 🔶 Core (issue/adjust/disable and tender integration) |
+| Online store (Page, Article/Blog, Menu, Redirect, File) | `pages`, `blogPosts`, `files`, `menus`, `redirects` + CRUD sets synced remotely | 🔶 Core (CMS and redirects; no public storefront engine) |
+| Metafields (definitions + values) | `metafieldDefinitions`, `metafields`, `metafieldDefinitionCreate/Delete`, `metafieldsSet` | 🔶 Core |
+| Metaobjects | `metaobjectDefinitions`, `metaobjectEntries` + create/update/delete | 🔶 Core |
+| Access (StaffMember, permissions) | `staff`, `staffMemberCreate/Update/Delete`, `staffMemberPermissionSet`, `staffMemberSetStatus`, staff session cookie check, `activity` audit log | 🔶 Core |
+| Shop (Shop, Plan) | `shop`, `settingsUpdate`, billing plan card, locales (`localeAdd/Remove`), markets (`marketUpdate`) | 🔶 Core |
+| Analytics | Computed client-side from order data (net sales minus refunds/discounts) | 🔶 Partial (client rollups) |
+| Apps | `apps`, `appInstall/Uninstall/Toggle` (simulated catalog) | 🔶 Demo |
+| Webhooks / Bulk operations / Carrier rates / Checkout branding | — | ⛔ Intentionally out of scope (platform infrastructure, not admin features) |
 
 ## Run
 
@@ -59,6 +59,21 @@ npm install
 npm run seed                # load demo data (frontend/src/data)
 npm start                   # → http://localhost:4000/graphql (playground enabled)
 ```
+
+**Auth:** POST `/auth/login` with `{ "email": "…", "password": "…" }` sets an HttpOnly staff session
+cookie (scrypt-verified `passwordHash` on `StaffMember`). All `/graphql` methods (GET and POST) and
+`POST /uploads` require a valid session unless `AUTH_DISABLED=true`. Playground and introspection are
+dev-only (`NODE_ENV !== production`). `SESSION_SECRET` must be ≥32 random chars or the server refuses
+to boot. After `npm run seed`, demo login is `ava@northstargoods.com` / `northstar123`.
+
+**Authorization:** GraphQL mutations enforce staff permissions from the `StaffMember.permissions`
+JSON (owner bypasses all checks; staff mutations are owner-only). Unmapped mutations are **denied**
+(default-deny). Run `npm run check:authz` to verify SDL ↔ permission-map parity. Activity logs and
+order timeline events attribute the logged-in staff member.
+
+**Session revocation:** Logout clears the browser cookie only. The stateless HMAC token remains valid
+for up to 7 days if copied. Kill switches: deactivate the staff member (checked on every request) or
+rotate `SESSION_SECRET`.
 
 Frontend: set `VITE_API_URL=http://localhost:4000` in `frontend/.env.local` and `npm run dev`.
 Without `VITE_API_URL`, the frontend falls back to the offline localStorage demo mode.

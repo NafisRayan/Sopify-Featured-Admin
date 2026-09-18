@@ -13,10 +13,46 @@ import { useStore } from '@/store/useStore'
 export const API_URL: string | undefined = (import.meta as any).env?.VITE_API_URL || undefined
 export const IS_REMOTE = Boolean(API_URL)
 
+export interface StaffSessionInfo {
+  id: string
+  name: string
+  email: string
+  role: string
+}
+
+/** Returns the current staff session, or null if unauthenticated. */
+export async function checkSession(): Promise<StaffSessionInfo | null> {
+  if (!API_URL) return null
+  const res = await fetch(`${API_URL}/auth/me`, { credentials: 'include' })
+  if (!res.ok) return null
+  const data = await res.json()
+  return data.staff ?? null
+}
+
+/** Authenticate with email + password; sets HttpOnly session cookie. */
+export async function login(email: string, password: string): Promise<StaffSessionInfo> {
+  if (!API_URL) throw new Error('API_URL not configured')
+  const res = await fetch(`${API_URL}/auth/login`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.message ?? 'Invalid email or password')
+  return body.staff
+}
+
+export async function logout(): Promise<void> {
+  if (!API_URL) return
+  await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' })
+}
+
 export async function gqlRequest<T = any>(query: string, variables?: Record<string, unknown>): Promise<T> {
   if (!API_URL) throw new Error('API_URL not configured')
   const res = await fetch(`${API_URL}/graphql`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
   })
@@ -49,7 +85,10 @@ export function syncMutation(mutation: string): void {
   const field = mutation.replace(/^mutation\s*/, '').trim().replace(/^{(.*)}$/s, '$1').trim()
   gqlRequest(`mutation _ { ${field} }`)
     .then(() => scheduleRefresh())
-    .catch((e) => console.error('[sync]', mutation.slice(0, 60), e))
+    .catch((e) => {
+      console.error('[sync]', mutation.slice(0, 60), e)
+      scheduleRefresh()
+    })
 }
 
 // ─── Server reconcile ───────────────────────────────────────────────────────
@@ -58,8 +97,8 @@ const SNAPSHOT_QUERY = `{
   bootstrap {
     products { id title descriptionHtml vendor productType category status tags collectionIds channels options { name values } variants { id productId title sku barcode price compareAtPrice costPerItem optionValues weightGrams imageId available } media { id productId type src alt } seo { title description handle } weightGrams requiresShipping trackQuantity createdAt updatedAt totalInventory }
     customers { id firstName lastName email phone defaultAddress { firstName lastName address1 address2 city province country zip phone company } addresses { firstName lastName address1 address2 city province country zip phone company } tags note emailMarketingConsent taxExempt createdAt ordersCount totalSpent lastOrderAt }
-    orders { id name customerId email phone createdAt cancelledAt closedAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice discountCode { code amount } subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals }
-    abandonedCheckouts { id customerId email createdAt lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } total recoveryStatus }
+    orders { id name customerId email phone createdAt cancelledAt closedAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc restockedQty } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice discountCode { code amount } subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals }
+    abandonedCheckouts { id customerId email createdAt lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc restockedQty } total recoveryStatus }
     collections { id title descriptionHtml imageSrc handle type rules { column relation condition } rulesMatch productIds status seoTitle seoDescription publishedAt createdAt }
     locations { id name address1 city province country zip phone active createdAt }
     inventoryLevels { variantId locationId available committed unavailable onHand }
@@ -125,7 +164,7 @@ export async function uploadMedia(file: File): Promise<{ url: string; name: stri
   if (IS_REMOTE) {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await fetch(`${API_URL}/uploads`, { method: 'POST', body: fd })
+    const res = await fetch(`${API_URL}/uploads`, { method: 'POST', credentials: 'include', body: fd })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? 'Upload failed')
     return res.json()
   }

@@ -3,6 +3,8 @@
  * Run: node qa-api.mjs  (backend must be running on :4000)
  */
 const URL = 'http://localhost:4000/graphql'
+const AUTH_URL = 'http://localhost:4000/auth/login'
+let cookieJar = ''
 const RUN = Date.now().toString(36)
 
 let pass = 0
@@ -10,16 +12,31 @@ let fail = 0
 let locId, loc2Id
 const failures = []
 
+async function login() {
+  const res = await fetch(AUTH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'ava@northstargoods.com', password: process.env.STAFF_DEMO_PASSWORD || 'northstar123' }),
+  })
+  if (!res.ok) throw new Error(`Login failed: ${res.status}`)
+  const setCookie = res.headers.get('set-cookie')
+  if (setCookie) cookieJar = setCookie.split(';')[0]
+}
+
 async function gql(query, variables) {
   const res = await fetch(URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(cookieJar ? { Cookie: cookieJar } : {}),
+    },
     body: JSON.stringify({ query, variables }),
   })
   const json = await res.json()
   if (json.errors?.length) throw new Error(json.errors[0].message)
   return json.data
 }
+
 
 function check(name, cond, detail = '') {
   if (cond) {
@@ -46,6 +63,8 @@ async function mut(payloadField, mutation) {
   if (data.__error) return { __error: data.__error }
   return data[payloadField] ?? {}
 }
+
+await login()
 
 console.log('═══ 1. QUERY ROOT ═══')
 {

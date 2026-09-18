@@ -88,7 +88,7 @@ export interface GiftCard {
   expiresAt?: string
   note?: string
   createdAt: string
-  history: { id: ID; at: string; type: 'issued' | 'used' | 'adjusted' | 'disabled'; amount: number; note?: string }[]
+  history: { id: ID; at: string; type: 'issued' | 'used' | 'adjusted' | 'disabled' | 'enabled'; amount: number; note?: string }[]
 }
 
 // Finances — Payouts

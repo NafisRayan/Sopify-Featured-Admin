@@ -5,6 +5,7 @@ import { PrismaModule } from '../../prisma/prisma.module'
 import { parseJson, toJson } from '../../common/helpers'
 import { mapTransfer } from '../../common/mappers'
 import { uid } from '../../common/ids'
+import { actorId, actorName } from '../../auth/actor'
 
 @Injectable()
 export class InventoryService {
@@ -12,13 +13,13 @@ export class InventoryService {
 
   private async log(variantId: string, locationId: string, change: number, resulting: number, reason: string) {
     await this.prisma.inventoryHistory.create({
-      data: { id: uid('ih'), variantId, locationId, change, resultingAvailable: resulting, reason, createdAt: new Date(), author: 'Ava Chen' },
+      data: { id: uid('ih'), variantId, locationId, change, resultingAvailable: resulting, reason, createdAt: new Date(), author: actorName() },
     })
   }
 
   private async logActivity(action: string, resource: string, resourceId?: string) {
     await this.prisma.activityEntry.create({
-      data: { id: uid('act'), at: new Date(), staffId: 'staff_owner', staffName: 'Ava Chen', action, resource, resourceId: resourceId ?? null },
+      data: { id: uid('act'), at: new Date(), staffId: actorId(), staffName: actorName(), action, resource, resourceId: resourceId ?? null },
     })
   }
 

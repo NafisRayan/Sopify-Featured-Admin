@@ -10,15 +10,25 @@ import { uid } from '@/lib/id'
 import { delay } from '@/lib/delay'
 import { useCan } from '@/lib/permissions'
 import type { UrlRedirect } from '@/types/parity'
-
+import { syncMutation, gqlLiteral, mutatePayload, IS_REMOTE } from '@/services/api'
 /** Redirects service inline (small, single-module) — Online store → URL redirects */
 async function createRedirect(from: string, to: string): Promise<UrlRedirect> {
   await delay(250)
   const store = getStore()
   const normFrom = `/${slugify(from).replace(/^\//, '')}`
   if (store.redirects.some((r) => r.from === normFrom)) throw new Error('A redirect for this URL already exists')
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload(
+      'redirectCreate',
+      `redirectCreate(redirect: ${gqlLiteral({ from: normFrom, to: to.trim() })}) { redirect { id from to createdAt } userErrors { field message } }`,
+    )
+    const redirect = entity as UrlRedirect
+    store.upsertRedirect(redirect)
+    return redirect
+  }
   const redirect: UrlRedirect = { id: uid('red'), from: normFrom, to: to.trim(), createdAt: new Date().toISOString() }
   store.upsertRedirect(redirect)
+  syncMutation(`mutation { redirectCreate(redirect: ${gqlLiteral({ from: redirect.from, to: redirect.to })}) { userErrors { message } } }`)
   return redirect
 }
 
@@ -29,12 +39,30 @@ async function updateRedirect(id: string, from: string, to: string): Promise<voi
   if (!r) throw new Error('Redirect not found')
   const normFrom = `/${slugify(from).replace(/^\//, '')}`
   if (store.redirects.some((x) => x.id !== id && x.from === normFrom)) throw new Error('A redirect for this URL already exists')
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload(
+      'redirectUpdate',
+      `redirectUpdate(id: ${gqlLiteral(id)}, redirect: ${gqlLiteral({ from: normFrom, to: to.trim() })}) { redirect { id from to createdAt } userErrors { field message } }`,
+    )
+    if (entity) store.upsertRedirect(entity as UrlRedirect)
+    return
+  }
   store.upsertRedirect({ ...r, from: normFrom, to: to.trim() })
+  syncMutation(`mutation { redirectUpdate(id: ${gqlLiteral(id)}, redirect: ${gqlLiteral({ from: normFrom, to: to.trim() })}) { userErrors { message } } }`)
 }
 
 async function removeRedirect(id: string): Promise<void> {
   await delay(200)
+  if (IS_REMOTE) {
+    await mutatePayload(
+      'redirectDelete',
+      `redirectDelete(id: ${gqlLiteral(id)}) { updatedIds userErrors { field message } }`,
+    )
+    getStore().removeRedirect(id)
+    return
+  }
   getStore().removeRedirect(id)
+  syncMutation(`mutation { redirectDelete(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }
 
 export default function RedirectsPage() {

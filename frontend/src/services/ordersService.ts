@@ -19,6 +19,23 @@ import type {
 
 const author = CURRENT_USER.name
 
+/** Release committed stock across all locations (mirrors backend releaseCommitted). */
+export function releaseCommittedLocal(variantId: string, quantity: number): void {
+  const store = getStore()
+  let remaining = quantity
+  while (remaining > 0) {
+    const level = store.inventoryLevels.find((l) => l.variantId === variantId && l.committed > 0)
+    if (!level) break
+    const rel = Math.min(level.committed, remaining)
+    store.upsertInventoryLevel({
+      ...level,
+      committed: level.committed - rel,
+      available: level.available + rel,
+    })
+    remaining -= rel
+  }
+}
+
 function addTimeline(orderId: string, type: TimelineEventType, message: string): void {
   const order = getStore().orders.find((o) => o.id === orderId)
   if (!order) return
@@ -40,7 +57,7 @@ function recomputeFulfillmentStatus(order: Order): FulfillmentStatus {
   return allFulfilled ? 'fulfilled' : someFulfilled ? 'partial' : 'unfulfilled'
 }
 
-function recomputePaymentStatus(order: Order): PaymentStatus {
+export function recomputePaymentStatus(order: Order): PaymentStatus {
   if (order.status === 'cancelled') return order.paymentStatus
   const refunded = order.refunds.reduce((s, r) => s + r.amount, 0)
   if (refunded === 0) return order.paymentStatus
@@ -63,23 +80,41 @@ export async function fulfillOrder(input: FulfillInput): Promise<void> {
   const store = getStore()
   const order = store.orders.find((o) => o.id === input.orderId)
   if (!order) throw new Error('Order not found')
+  if (order.status === 'cancelled' || order.status === 'closed' || order.paymentStatus === 'refunded' || order.fulfillmentStatus === 'fulfilled') {
+    throw new Error('Cannot fulfill order in current status')
+  }
 
-  // move reserved units out of committed stock
+  const alreadyFulfilled = new Set(order.fulfillments.flatMap((f) => f.lineItemIds))
+  for (const lid of input.lineItemIds) {
+    if (alreadyFulfilled.has(lid)) throw new Error(`Line item ${lid} is already fulfilled`)
+  }
+
   for (const li of order.lineItems) {
     if (!input.lineItemIds.includes(li.id)) continue
-    const level = variantLevelAt(li.variantId, input.locationId)
-    if (level) {
-      store.upsertInventoryLevel({
-        ...level,
-        committed: Math.max(0, level.committed - li.quantity),
-      })
-    } else {
-      // order fulfilled from a location without a recorded level: create one
-      store.upsertInventoryLevel({
-        variantId: li.variantId, locationId: input.locationId,
-        available: 0, committed: 0, unavailable: 0,
-      })
+    const targetLevel = variantLevelAt(li.variantId, input.locationId)
+    if (!targetLevel) throw new Error(`No inventory level for variant at location ${input.locationId}`)
+    if (targetLevel.committed >= li.quantity) continue
+    const committedAnywhere = store.inventoryLevels
+      .filter((l) => l.variantId === li.variantId)
+      .reduce((s, l) => s + l.committed, 0)
+    if (committedAnywhere > 0) {
+      throw new Error(`Insufficient reserved stock at this location (reserved ${targetLevel.committed}, needs ${li.quantity})`)
     }
+    if (targetLevel.available < li.quantity) {
+      throw new Error(`Insufficient available stock at this location (has ${targetLevel.available}, needs ${li.quantity})`)
+    }
+  }
+  for (const li of order.lineItems) {
+    if (!input.lineItemIds.includes(li.id)) continue
+    const targetLevel = variantLevelAt(li.variantId, input.locationId)!
+    if (targetLevel.committed >= li.quantity) {
+      store.upsertInventoryLevel({
+        ...targetLevel,
+        committed: targetLevel.committed - li.quantity,
+      })
+      continue
+    }
+    store.upsertInventoryLevel({ ...targetLevel, available: targetLevel.available - li.quantity })
   }
 
   const fulfillment: Fulfillment = {
@@ -109,6 +144,9 @@ export async function fulfillOrder(input: FulfillInput): Promise<void> {
   if (updated.fulfillmentStatus === 'fulfilled') {
     store.patchOrder(order.id, { status: 'closed', closedAt: new Date().toISOString() })
   }
+
+  // Persist remotely to GraphQL (C3)
+  syncMutation(`mutation { orderFulfill(input: { orderId: ${gqlLiteral(input.orderId)}, lineItemIds: ${gqlLiteral(input.lineItemIds)}, locationId: ${gqlLiteral(input.locationId)}, trackingNumber: ${input.trackingNumber ? gqlLiteral(input.trackingNumber) : 'null'}, carrier: ${input.carrier ? gqlLiteral(input.carrier) : 'null'}, notifyCustomer: ${Boolean(input.notifyCustomer)} }) { order { id fulfillmentStatus } userErrors { message } } }`)
 }
 
 // ─── Payments ──────────────────────────────────────────────────────────────
@@ -137,6 +175,11 @@ export async function refundOrder(input: RefundInput): Promise<void> {
   const store = getStore()
   const order = store.orders.find((o) => o.id === input.orderId)
   if (!order) throw new Error('Order not found')
+  if (order.status === 'cancelled') throw new Error('Cannot refund a cancelled order')
+  if (order.isDraft) throw new Error('Cannot refund a draft order')
+  if (!['paid', 'partially_refunded'].includes(order.paymentStatus)) {
+    throw new Error('Refunds are only allowed for paid or partially refunded orders')
+  }
   if (input.amount <= 0) throw new Error('Refund amount must be greater than 0')
   const alreadyRefunded = order.refunds.reduce((s, r) => s + r.amount, 0)
   if (alreadyRefunded + input.amount > order.total + 0.01) {
@@ -157,14 +200,24 @@ export async function refundOrder(input: RefundInput): Promise<void> {
   store.patchOrder(order.id, updated)
 
   if (input.restock) {
-    for (const li of order.lineItems) {
+    let lineItems = order.lineItems.map((li) => ({ ...li }))
+    for (let i = 0; i < lineItems.length; i++) {
+      const li = lineItems[i]
       if (!input.lineItemIds.includes(li.id)) continue
-      const levels = store.inventoryLevels.filter((l) => l.variantId === li.variantId)
-      if (levels.length > 0) {
-        const level = levels[0]!
-        store.upsertInventoryLevel({ ...level, available: level.available + li.quantity })
+      const alreadyRestocked = li.restockedQty ?? 0
+      const unitsToRestock = li.quantity - alreadyRestocked
+      if (unitsToRestock <= 0) continue
+
+      const fulfillment = order.fulfillments.find((f) => f.lineItemIds.includes(li.id))
+      if (fulfillment) {
+        const level = store.inventoryLevels.find((l) => l.variantId === li.variantId && l.locationId === fulfillment.locationId)
+        if (level) store.upsertInventoryLevel({ ...level, available: level.available + unitsToRestock })
+      } else {
+        releaseCommittedLocal(li.variantId, unitsToRestock)
       }
+      lineItems[i] = { ...li, restockedQty: alreadyRestocked + unitsToRestock }
     }
+    store.patchOrder(order.id, { lineItems })
   }
 
   addTimeline(
@@ -175,6 +228,9 @@ export async function refundOrder(input: RefundInput): Promise<void> {
   if (updated.paymentStatus === 'refunded' && order.fulfillmentStatus === 'unfulfilled') {
     store.patchOrder(order.id, { fulfillmentStatus: 'returned', status: 'closed', closedAt: new Date().toISOString() })
   }
+
+  // Persist remotely to GraphQL (C3)
+  syncMutation(`mutation { orderRefund(input: { orderId: ${gqlLiteral(input.orderId)}, amount: ${input.amount}, reason: ${gqlLiteral(input.reason)}, lineItemIds: ${gqlLiteral(input.lineItemIds)}, restock: ${Boolean(input.restock)} }) { order { id paymentStatus } userErrors { message } } }`)
 }
 
 // ─── Cancel / close ────────────────────────────────────────────────────────
@@ -184,28 +240,38 @@ export async function cancelOrder(orderId: string, restock = true): Promise<void
   const store = getStore()
   const order = store.orders.find((o) => o.id === orderId)
   if (!order) throw new Error('Order not found')
+  if (order.status === 'cancelled') throw new Error('Order is already cancelled')
+  if (order.isDraft) throw new Error('Cannot cancel a draft order')
 
   // release reserved stock back to available
   if (restock && order.fulfillmentStatus !== 'fulfilled') {
     for (const li of order.lineItems) {
-      const levels = store.inventoryLevels.filter((l) => l.variantId === li.variantId)
-      if (levels.length > 0) {
-        const level = levels[0]!
-        const release = Math.min(level.committed, li.quantity)
-        store.upsertInventoryLevel({
-          ...level,
-          committed: level.committed - release,
-          available: level.available + release,
-        })
-      }
+      releaseCommittedLocal(li.variantId, li.quantity)
     }
   }
-  syncMutation(`mutation { orderCancel(id: ${gqlLiteral(orderId)}, restock: ${restock}) { userErrors { message } } }`)
+
+  const alreadyRefunded = order.refunds.reduce((s, r) => s + r.amount, 0)
+  const remaining = roundMoney(Math.max(0, order.total - alreadyRefunded))
+  const newRefunds = [...order.refunds]
+  const captured = order.paymentStatus === 'paid' || order.paymentStatus === 'partially_refunded'
+  if (captured && remaining > 0) {
+    newRefunds.push({
+      id: uid('rf'),
+      createdAt: new Date().toISOString(),
+      amount: remaining,
+      reason: 'Order cancelled',
+      lineItemIds: order.lineItems.map((li) => li.id),
+      restock,
+    })
+  }
+
   store.patchOrder(orderId, {
     status: 'cancelled',
     cancelledAt: new Date().toISOString(),
-    paymentStatus: order.paymentStatus === 'paid' ? 'refunded' : order.paymentStatus === 'pending' ? 'voided' : order.paymentStatus,
+    paymentStatus: captured ? 'refunded' : order.paymentStatus === 'pending' ? 'voided' : order.paymentStatus,
+    refunds: newRefunds,
   })
+  syncMutation(`mutation { orderCancel(id: ${gqlLiteral(orderId)}, restock: ${restock}) { userErrors { message } } }`)
   addTimeline(orderId, 'cancel', `Order cancelled${restock ? ' · items restocked' : ''}`)
 }
 
@@ -266,12 +332,17 @@ export interface DraftInput {
   email?: string
   shippingPrice?: number
   discountAmount?: number
+  discountCode?: string
 }
 
 function buildDraft(input: DraftInput): Order {
   const store = getStore()
   const customer = store.customers.find((c) => c.id === input.customerId)
   if (!customer) throw new Error('Select a customer')
+  const company = store.companies.find((c) => c.customerId === customer.id)
+  const priceMultiplier = company && company.priceListDiscountPercent > 0
+    ? Math.max(0, 1 - company.priceListDiscountPercent / 100)
+    : 1
   const lineItems: OrderLineItem[] = input.lineItems.map((li) => {
     const product = store.products.find((p) => p.variants.some((v) => v.id === li.variantId))
     const variant = product?.variants.find((v) => v.id === li.variantId)
@@ -284,7 +355,7 @@ function buildDraft(input: DraftInput): Order {
       variantTitle: variant.title === 'Default Title' ? '' : variant.title,
       sku: variant.sku,
       quantity: li.quantity,
-      price: variant.price,
+      price: roundMoney(variant.price * priceMultiplier),
       totalDiscount: 0,
       requiresShipping: true,
       imageSrc: product.media[0]?.src,
@@ -292,8 +363,35 @@ function buildDraft(input: DraftInput): Order {
   })
   const subtotal = roundMoney(lineItems.reduce((s, li) => s + li.price * li.quantity, 0))
   const shippingPrice = input.shippingPrice ?? 6.99
-  const discountAmount = input.discountAmount ?? 0
-  const taxTotal = roundMoney((subtotal - discountAmount) * 0.08)
+  if (shippingPrice < 0) throw new Error('Shipping price cannot be negative')
+  let discountAmount = input.discountAmount ?? 0
+  if (discountAmount < 0) throw new Error('Discount amount cannot be negative')
+  let discountCode: Order['discountCode']
+  const rawCode = input.discountCode?.trim()
+  if (rawCode) {
+    const disc = store.discounts.find((d) => d.code.toUpperCase() === rawCode.toUpperCase() && d.status === 'active')
+    if (!disc) throw new Error(`Discount code ${rawCode} is invalid or inactive`)
+    if (disc.type === 'percentage') {
+      const pct = Math.min(100, Math.max(0, disc.value ?? 0))
+      discountAmount = roundMoney(subtotal * (pct / 100))
+    } else if (disc.type === 'fixed_amount') {
+      discountAmount = Math.min(subtotal, roundMoney(Math.max(0, disc.value ?? 0)))
+    } else if (disc.type === 'free_shipping' || disc.type === 'bxgy') {
+      throw new Error(`Discount code ${rawCode} is not supported on draft orders`)
+    } else {
+      throw new Error(`Discount code ${rawCode} has an unsupported type`)
+    }
+    discountCode = { code: disc.code, amount: discountAmount }
+  } else if (discountAmount > 0) {
+    if (discountAmount > subtotal + 0.01) throw new Error('Discount amount exceeds subtotal')
+    discountCode = { code: 'CUSTOM', amount: roundMoney(discountAmount) }
+  }
+  let taxTotal = 0
+  if (!customer.taxExempt) {
+    const rate = (store.settings.taxes?.taxRate ?? 8) / 100
+    const taxableBase = Math.max(0, subtotal - discountAmount) + (store.settings.taxes?.chargeTaxOnShipping ? shippingPrice : 0)
+    taxTotal = roundMoney(taxableBase * rate)
+  }
   const addr: Address | undefined = customer.defaultAddress
   const now = new Date().toISOString()
   return {
@@ -313,8 +411,8 @@ function buildDraft(input: DraftInput): Order {
     shippingPrice,
     subtotal,
     taxTotal,
-    total: roundMoney(subtotal - discountAmount + shippingPrice + taxTotal),
-    discountCode: discountAmount > 0 ? { code: 'CUSTOM', amount: discountAmount } : undefined,
+    total: roundMoney(Math.max(0, subtotal - discountAmount) + shippingPrice + taxTotal),
+    discountCode,
     currency: 'USD',
     tags: input.tags ?? [],
     note: input.note,
@@ -329,7 +427,7 @@ function buildDraft(input: DraftInput): Order {
 export async function createDraft(input: DraftInput): Promise<Order> {
   await delay(350)
   if (IS_REMOTE) {
-    const { entity } = await mutatePayload('draftOrderCreate', `draftOrderCreate(customerId: ${gqlLiteral(input.customerId)}, items: ${gqlLiteral(input.lineItems)}, note: ${gqlLiteral(input.note ?? null)}, tags: ${gqlLiteral(input.tags ?? [])}, shippingPrice: ${input.shippingPrice ?? 6.99}, discountAmount: ${input.discountAmount ?? 0}) { order { id name customerId email phone createdAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals } userErrors { field message } }`)
+    const { entity } = await mutatePayload('draftOrderCreate', `draftOrderCreate(customerId: ${gqlLiteral(input.customerId)}, items: ${gqlLiteral(input.lineItems)}, note: ${gqlLiteral(input.note ?? null)}, tags: ${gqlLiteral(input.tags ?? [])}, shippingPrice: ${input.shippingPrice ?? 6.99}, discountAmount: ${input.discountAmount ?? 0}, discountCode: ${gqlLiteral(input.discountCode ?? null)}) { order { id name customerId email phone createdAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals } userErrors { field message } }`)
     getStore().addOrder(entity as Order)
     return entity as Order
   }
@@ -350,9 +448,13 @@ export async function updateDraft(orderId: string, input: DraftInput): Promise<v
     total: rebuilt.total,
     customerId: rebuilt.customerId,
     email: rebuilt.email,
+    shippingPrice: rebuilt.shippingPrice,
+    shippingTitle: rebuilt.shippingTitle,
+    discountCode: rebuilt.discountCode,
     note: rebuilt.note,
     tags: rebuilt.tags,
   })
+  syncMutation(`mutation { draftOrderUpdate(id: ${gqlLiteral(orderId)}, customerId: ${gqlLiteral(rebuilt.customerId)}, items: ${gqlLiteral(rebuilt.lineItems.map((li) => ({ variantId: li.variantId, quantity: li.quantity })))}, note: ${gqlLiteral(rebuilt.note ?? null)}, tags: ${gqlLiteral(rebuilt.tags ?? [])}, shippingPrice: ${rebuilt.shippingPrice}, discountAmount: ${rebuilt.discountCode?.amount ?? 0}, discountCode: ${gqlLiteral(rebuilt.discountCode?.code && rebuilt.discountCode.code !== "CUSTOM" ? rebuilt.discountCode.code : null)}) { order { id } userErrors { message } } }`)
 }
 
 /** Mark a draft as a real order: moves it into the live order flow */
@@ -361,6 +463,36 @@ export async function convertDraft(orderId: string): Promise<string> {
   const store = getStore()
   const draft = store.orders.find((o) => o.id === orderId)
   if (!draft || !draft.isDraft) throw new Error('Draft not found')
+
+  const needed = new Map<string, number>()
+  for (const li of draft.lineItems) {
+    needed.set(li.variantId, (needed.get(li.variantId) ?? 0) + li.quantity)
+  }
+  for (const [variantId, qty] of needed) {
+    const total = store.inventoryLevels
+      .filter((l) => l.variantId === variantId)
+      .reduce((s, l) => s + l.available, 0)
+    if (total < qty) {
+      throw new Error(`Insufficient available stock (has ${total}, needs ${qty})`)
+    }
+  }
+  for (const [variantId, qty] of needed) {
+    let remaining = qty
+    const levels = store.inventoryLevels
+      .filter((l) => l.variantId === variantId && l.available > 0)
+      .sort((a, b) => b.available - a.available)
+    for (const level of levels) {
+      if (remaining <= 0) break
+      const take = Math.min(level.available, remaining)
+      store.upsertInventoryLevel({
+        ...level,
+        available: level.available - take,
+        committed: level.committed + take,
+      })
+      remaining -= take
+    }
+  }
+
   const name = `#${nextOrderNumber()}`
   store.patchOrder(orderId, {
     name,
@@ -391,6 +523,7 @@ export async function sendRecoveryEmail(checkoutId: string): Promise<void> {
   const co = store.abandoned.find((a) => a.id === checkoutId)
   if (!co) throw new Error('Checkout not found')
   store.patchAbandoned(checkoutId, { recoveryStatus: 'email_sent' })
+  syncMutation(`mutation { abandonedCheckoutRecoverySend(id: ${gqlLiteral(checkoutId)}) { userErrors { message } } }`)
 }
 
 export async function createOrderFromAbandoned(checkoutId: string): Promise<string | undefined> {
@@ -400,9 +533,22 @@ export async function createOrderFromAbandoned(checkoutId: string): Promise<stri
   if (!co) return undefined
   const customer = store.customers.find((c) => c.id === co.customerId)
   if (!customer) return undefined
-  const draft = await createDraft({ customerId: customer.id, lineItems: co.lineItems.map((li) => ({ variantId: li.variantId, quantity: li.quantity })) })
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload(
+      'abandonedCheckoutConvert',
+      `abandonedCheckoutConvert(id: ${gqlLiteral(checkoutId)}) { order { id name customerId email phone createdAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc restockedQty } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals } userErrors { field message } }`,
+    )
+    if (entity) getStore().addOrder(entity as Order)
+    store.patchAbandoned(checkoutId, { recoveryStatus: 'recovered' })
+    return entity?.id as string | undefined
+  }
+  const draft = await createDraft({
+    customerId: customer.id,
+    lineItems: co.lineItems.map((li) => ({ variantId: li.variantId, quantity: li.quantity })),
+  })
+  const orderId = await convertDraft(draft.id)
   store.patchAbandoned(checkoutId, { recoveryStatus: 'recovered' })
-  return convertDraft(draft.id)
+  return orderId
 }
 
 // ─── Bulk operations ───────────────────────────────────────────────────────
@@ -446,7 +592,10 @@ export async function bulkCancel(orderIds: string[]): Promise<void> {
 
 export async function bulkArchive(orderIds: string[]): Promise<void> {
   await delay(300)
-  for (const id of orderIds) await closeOrder(id)
+  for (const id of orderIds) {
+    const o = getStore().orders.find((x) => x.id === id)
+    if (o && o.status !== 'cancelled' && !o.isDraft) await closeOrder(id)
+  }
 }
 
 export async function getOrder(id: string): Promise<Order | undefined> {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '@/store/useStore'
 import { Button, Card, CardHeader, CardSection, DividedCard, Input, PageHeader, Textarea, Toggle, useToast } from '@/components/ui'
 import { updateStoreSettings } from '@/services/settingsService'
@@ -9,9 +9,9 @@ export default function PreferencesPage() {
   const { toast } = useToast()
   const canEdit = useCan('products', 'edit')
   const [form, setForm] = useState({
-    pageTitle: `${settings.storeName} — Everyday objects built to be kept`,
-    metaDescription: 'Durable everyday goods: apparel, bags, kitchen and home goods designed in Portland.',
-    passwordPage: false,
+    pageTitle: settings.pageTitle ?? `${settings.storeName} — Everyday objects built to be kept`,
+    metaDescription: settings.metaDescription ?? 'Durable everyday goods: apparel, bags, kitchen and home goods designed in Portland.',
+    passwordPage: Boolean(settings.passwordProtected),
   })
   const [contact, setContact] = useState({
     email: settings.email,
@@ -19,10 +19,25 @@ export default function PreferencesPage() {
   })
   const [saving, setSaving] = useState(false)
 
+  useEffect(() => {
+    setForm({
+      pageTitle: settings.pageTitle ?? `${settings.storeName} — Everyday objects built to be kept`,
+      metaDescription: settings.metaDescription ?? 'Durable everyday goods: apparel, bags, kitchen and home goods designed in Portland.',
+      passwordPage: Boolean(settings.passwordProtected),
+    })
+    setContact({ email: settings.email, phone: settings.phone })
+  }, [settings])
+
   const save = async () => {
     setSaving(true)
     try {
-      await updateStoreSettings({ email: contact.email, phone: contact.phone })
+      await updateStoreSettings({
+        email: contact.email,
+        phone: contact.phone,
+        pageTitle: form.pageTitle,
+        metaDescription: form.metaDescription,
+        passwordProtected: form.passwordPage,
+      })
       toast('Preferences saved')
     } finally {
       setSaving(false)

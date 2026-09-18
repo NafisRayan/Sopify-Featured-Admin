@@ -12,6 +12,7 @@ type OrderLineItem {
   totalDiscount: Float!
   requiresShipping: Boolean!
   imageSrc: String
+  restockedQty: Int
 }
 
 type TimelineEvent {

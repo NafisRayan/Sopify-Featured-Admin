@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useStore } from '@/store/useStore'
 import { Minus, Plus, Trash2 } from 'lucide-react'
 import { Badge, Button, Drawer, Input, Select, Toggle, useToast } from '@/components/ui'
 import { VariantPickerModal, type PickedVariant } from '@/components/VariantPickerModal'
@@ -8,7 +9,6 @@ import { createReturn, editOrder } from '@/services/orderEditService'
 import type { Order, OrderLineItem } from '@/types'
 import type { ReturnLine } from '@/types/parity'
 
-const TAX_RATE = 0.08
 
 // ── Edit order (unfulfilled only) ──────────────────────────────────────────
 
@@ -21,6 +21,7 @@ interface EditDraftLine {
   sku: string
   price: number
   quantity: number
+  totalDiscount?: number
   imageSrc?: string
   originalQuantity: number // 0 for new lines
 }
@@ -36,6 +37,8 @@ export function EditOrderDrawer({
   onClose: () => void
 }) {
   const { toast } = useToast()
+  const settings = useStore((s) => s.settings)
+  const customers = useStore((s) => s.customers)
   const [draft, setDraft] = useState<EditDraftLine[] | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -52,6 +55,7 @@ export function EditOrderDrawer({
       sku: li.sku,
       price: li.price,
       quantity: li.quantity,
+      totalDiscount: li.totalDiscount ?? 0,
       imageSrc: li.imageSrc,
       originalQuantity: li.quantity,
     }))
@@ -65,22 +69,48 @@ export function EditOrderDrawer({
   const removeLine = (key: string) => setLines(lines.filter((l) => l.key !== key))
 
   const totals = useMemo(() => {
-    const subtotal = roundMoney(lines.reduce((s, l) => s + l.price * l.quantity, 0))
+    const subtotal = roundMoney(lines.reduce((s, l) => s + l.price * l.quantity - (l.totalDiscount ?? 0), 0))
     const discountAmount = order?.discountCode?.amount ?? 0
-    const tax = roundMoney((subtotal - discountAmount) * TAX_RATE)
     const shipping = order?.shippingPrice ?? 0
-    return { subtotal, tax, shipping, total: roundMoney(subtotal - discountAmount + shipping + tax) }
-  }, [lines, order])
+    const customer = order ? customers.find((c) => c.id === order.customerId) : undefined
+    let tax = 0
+    if (!customer?.taxExempt) {
+      const rate = (settings.taxes?.taxRate ?? 8) / 100
+      const taxableBase = Math.max(0, subtotal - discountAmount) + (settings.taxes?.chargeTaxOnShipping ? shipping : 0)
+      tax = roundMoney(taxableBase * rate)
+    }
+    const taxRate = settings.taxes?.taxRate ?? 8
+    return { subtotal, tax, shipping, total: roundMoney(Math.max(0, subtotal - discountAmount) + shipping + tax), taxRate }
+  }, [lines, order, customers, settings])
 
   if (!order) return null
 
   const save = async () => {
-    const added = lines
-      .filter((l) => l.originalQuantity === 0 && l.quantity > 0)
-      .map((l) => ({ variantId: l.variantId, quantity: l.quantity }))
-    const removed = lines
-      .filter((l) => l.originalQuantity > 0 && l.quantity < l.originalQuantity)
-      .map((l) => ({ lineItemId: l.lineItemId!, quantity: l.originalQuantity - l.quantity }))
+    const added: { variantId: string; quantity: number }[] = []
+    const removed: { lineItemId: string; quantity: number }[] = []
+
+    // 1. Check existing items for removal or qty decrease
+    for (const orig of order.lineItems) {
+      const current = lines.find((l) => l.lineItemId === orig.id)
+      if (!current) {
+        // Line was deleted via trash button
+        removed.push({ lineItemId: orig.id, quantity: orig.quantity })
+      } else if (current.quantity < orig.quantity) {
+        // Line quantity decreased
+        removed.push({ lineItemId: orig.id, quantity: orig.quantity - current.quantity })
+      } else if (current.quantity > orig.quantity) {
+        // Line quantity increased
+        added.push({ variantId: orig.variantId, quantity: current.quantity - orig.quantity })
+      }
+    }
+
+    // 2. Check brand new items added via picker
+    for (const l of lines) {
+      if (l.originalQuantity === 0 && l.quantity > 0) {
+        added.push({ variantId: l.variantId, quantity: l.quantity })
+      }
+    }
+
     if (added.length === 0 && removed.length === 0) {
       toast('No changes to save', { tone: 'warning' })
       return
@@ -168,7 +198,7 @@ export function EditOrderDrawer({
             <div className="flex justify-between"><span className="text-text-muted">Subtotal</span><span>{formatMoney(totals.subtotal)}</span></div>
             {order.discountCode && <div className="flex justify-between"><span className="text-text-muted">Discount</span><span>−{formatMoney(order.discountCode.amount)}</span></div>}
             <div className="flex justify-between"><span className="text-text-muted">Shipping</span><span>{shippingLabel(totals.shipping)}</span></div>
-            <div className="flex justify-between"><span className="text-text-muted">Tax (8%)</span><span>{formatMoney(totals.tax)}</span></div>
+            <div className="flex justify-between"><span className="text-text-muted">Tax ({totals.taxRate}%)</span><span>{formatMoney(totals.tax)}</span></div>
             <div className="flex justify-between border-t border-border pt-1 font-semibold">
               <span>New total</span><span>{formatMoney(totals.total)}</span>
             </div>
@@ -226,7 +256,8 @@ export function ReturnDrawer({
   const [qtyDraft, setQtyDraft] = useState<Record<string, number> | null>(null)
   const [reason, setReason] = useState('Changed mind')
   const [restock, setRestock] = useState(true)
-  const [refundAmount, setRefundAmount] = useState('0.00')
+  const [refundAmount, setRefundAmount] = useState<string | null>(null)
+  const [refundTouched, setRefundTouched] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const quantities: Record<string, number> = qtyDraft ?? {}
@@ -252,16 +283,17 @@ export function ReturnDrawer({
     }
     setSaving(true)
     try {
+      const finalRefund = !refundTouched ? subtotal : Number(refundAmount || 0)
       const ret = await createReturn({
         orderId: order.id,
         lines: selectedLines,
         reason,
         restock,
-        refundAmount: Number(refundAmount) || 0,
+        refundAmount: finalRefund,
       })
       // close immediately (refund + restock) — staff-initiated returns in this flow resolve now
       const { closeReturn } = await import('@/services/orderEditService')
-      await closeReturn(ret.id, { markRefunded: (Number(refundAmount) || 0) > 0 })
+      await closeReturn(ret.id, { markRefunded: finalRefund > 0 })
       toast(`Return created for ${order.name}`)
       setQtyDraft(null)
       onClose()
@@ -277,6 +309,8 @@ export function ReturnDrawer({
       open={open}
       onClose={() => {
         setQtyDraft(null)
+        setRefundTouched(false)
+        setRefundAmount(null)
         onClose()
       }}
       title={`Return items · ${order.name}`}
@@ -343,8 +377,11 @@ export function ReturnDrawer({
           step="0.01"
           min="0"
           prefix="$"
-          value={refundAmount === '0.00' && subtotal > 0 ? subtotal.toFixed(2) : refundAmount}
-          onChange={(e) => setRefundAmount(e.target.value)}
+          value={refundTouched ? (refundAmount ?? '') : (subtotal > 0 ? subtotal.toFixed(2) : '0.00')}
+          onChange={(e) => {
+            setRefundTouched(true)
+            setRefundAmount(e.target.value)
+          }}
           helpText={`Items value: ${formatMoney(subtotal)}`}
         />
       </div>

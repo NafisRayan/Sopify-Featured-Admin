@@ -8,6 +8,7 @@ import { Card, PageHeader } from '@/components/ui'
 
 const SECTIONS: { to: string; icon: typeof Globe; title: string; describe: string }[] = [
   { to: '/settings/general', icon: Globe, title: 'General', describe: 'Store details, billing address, standards and format' },
+  { to: '/settings/billing', icon: CreditCard, title: 'Plan and billing', describe: 'View your plan, billing cycle and invoices' },
   { to: '/settings/payments', icon: CreditCard, title: 'Payments', describe: 'Accept payments with payment providers' },
   { to: '/settings/checkout', icon: ShoppingBag, title: 'Checkout', describe: 'Customer accounts, checkout language and more' },
   { to: '/settings/shipping', icon: Truck, title: 'Shipping and delivery', describe: 'Manage shipping rates and methods' },

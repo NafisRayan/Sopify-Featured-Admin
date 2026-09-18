@@ -77,6 +77,7 @@ export async function updateCollection(id: string, patch: Partial<Collection>): 
   const added = next.productIds.filter((pid) => !existing.productIds.includes(pid))
   const removed = existing.productIds.filter((pid) => !next.productIds.includes(pid))
   store.patchCollection(id, next)
+  syncMutation(`mutation { collectionUpdate(id: ${gqlLiteral(id)}, collection: ${gqlLiteral({ title: next.title, descriptionHtml: next.descriptionHtml, imageSrc: next.imageSrc, handle: next.handle, type: next.type, rules: next.rules, rulesMatch: next.rulesMatch, productIds: next.productIds, status: next.status, seoTitle: next.seoTitle, seoDescription: next.seoDescription })}) { userErrors { message } } }`)
   for (const pid of added) {
     const p = store.products.find((x) => x.id === pid)
     if (p && !p.collectionIds.includes(id)) store.patchProduct(pid, { collectionIds: [...p.collectionIds, id] })
