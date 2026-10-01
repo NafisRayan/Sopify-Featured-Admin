@@ -20,13 +20,15 @@ export interface StaffSessionInfo {
   role: string
 }
 
-/** Returns the current staff session, or null if unauthenticated. */
+/** Returns the current staff session, or null only when the server returns 401. */
 export async function checkSession(): Promise<StaffSessionInfo | null> {
   if (!API_URL) return null
   const res = await fetch(`${API_URL}/auth/me`, { credentials: 'include' })
-  if (!res.ok) return null
+  if (res.status === 401) return null
+  if (!res.ok) throw new Error(`Session check failed (${res.status})`)
   const data = await res.json()
-  return data.staff ?? null
+  if (!data?.staff) throw new Error('Session check returned an invalid response')
+  return data.staff
 }
 
 /** Authenticate with email + password; sets HttpOnly session cookie. */

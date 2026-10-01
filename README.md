@@ -28,6 +28,14 @@ npm run dev
 ```
 
 Without `VITE_API_URL`, the frontend runs in **offline demo mode** (localStorage persistence).
+The copied backend config sets `AUTH_DISABLED=true` for local demo use. Before any
+shared or production deployment, set it to `false` and configure a random
+`SESSION_SECRET` as documented in `backend/.env.example`.
+
+### Demo login
+
+- Email: `ava@northstargoods.com`
+- Password: `northstar123`
 
 ## Architecture
 

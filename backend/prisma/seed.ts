@@ -119,8 +119,16 @@ async function main(): Promise<void> {
     }
     for (const o of orders as Record<string, unknown>[]) {
       const { createdAt, cancelledAt, closedAt, ...rest } = o
-      await tx.order.create({
-        data: {
+      const id = String(o.id)
+      await tx.order.upsert({
+        where: { id },
+        update: {
+          ...(rest as object),
+          createdAt: new Date(createdAt as string),
+          cancelledAt: date(cancelledAt as string),
+          closedAt: date(closedAt as string),
+        },
+        create: {
           ...(rest as object),
           createdAt: new Date(createdAt as string),
           cancelledAt: date(cancelledAt as string),
@@ -130,19 +138,45 @@ async function main(): Promise<void> {
     }
     for (const a of abandoned as Record<string, unknown>[]) {
       const { createdAt, ...rest } = a
-      await tx.abandonedCheckout.create({ data: { ...(rest as object), createdAt: new Date(createdAt as string) } })
+      const id = String(a.id)
+      await tx.abandonedCheckout.upsert({
+        where: { id },
+        update: { ...(rest as object), createdAt: new Date(createdAt as string) },
+        create: { ...(rest as object), createdAt: new Date(createdAt as string) },
+      })
     }
     for (const c of collections as Record<string, unknown>[]) {
       const { createdAt, publishedAt, ...rest } = c
-      await tx.collection.create({ data: { ...(rest as object), createdAt: new Date(createdAt as string), publishedAt: date(publishedAt as string) } })
+      const id = String(c.id)
+      await tx.collection.upsert({
+        where: { id },
+        update: { ...(rest as object), createdAt: new Date(createdAt as string), publishedAt: date(publishedAt as string) },
+        create: { ...(rest as object), createdAt: new Date(createdAt as string), publishedAt: date(publishedAt as string) },
+      })
     }
     for (const l of locations as Record<string, unknown>[]) {
       const { createdAt, ...rest } = l
       await tx.location.create({ data: { ...(rest as object), createdAt: new Date(createdAt as string) } })
     }
+    // Source demo data can contain repeated (variantId, locationId) rows.
+    // Keep the last occurrence so seeding remains idempotent.
+    const inventoryLevelByKey = new Map<string, Record<string, unknown>>()
     for (const l of inventoryLevels as Record<string, unknown>[]) {
-      await tx.inventoryLevel.create({ data: l as object })
+      const variantId = String(l.variantId)
+      const locationId = String(l.locationId)
+      inventoryLevelByKey.set(`${variantId}::${locationId}`, l)
     }
+    const inventoryRows: { variantId: string; locationId: string; available: number; committed: number; unavailable: number }[] = []
+    for (const l of inventoryLevelByKey.values()) {
+      inventoryRows.push({
+        variantId: String(l.variantId),
+        locationId: String(l.locationId),
+        available: Number(l.available ?? 0),
+        committed: Number(l.committed ?? 0),
+        unavailable: Number(l.unavailable ?? 0),
+      })
+    }
+    await tx.inventoryLevel.createMany({ data: inventoryRows, skipDuplicates: true })
     for (const h of inventoryHistory as Record<string, unknown>[]) {
       const { createdAt, ...rest } = h
       await tx.inventoryHistory.create({ data: { ...(rest as object), createdAt: new Date(createdAt as string) } })
@@ -191,10 +225,20 @@ async function main(): Promise<void> {
       await tx.navMenu.create({ data: m as object })
     }
     for (const a of apps as Record<string, unknown>[]) {
-      await tx.appEntry.create({ data: { ...(a as object), suggested: false } })
+      const id = String(a.id)
+      await tx.appEntry.upsert({
+        where: { id },
+        update: { ...(a as object), suggested: false },
+        create: { ...(a as object), suggested: false },
+      })
     }
     for (const a of appSuggestions as Record<string, unknown>[]) {
-      await tx.appEntry.create({ data: { ...(a as object), suggested: true } })
+      const id = String(a.id)
+      await tx.appEntry.upsert({
+        where: { id },
+        update: { ...(a as object), suggested: true },
+        create: { ...(a as object), suggested: true },
+      })
     }
     await tx.storeSettings.create({ data: { id: 'singleton', value: settings } })
     await tx.theme.create({ data: { id: 'singleton', value: theme } })
