@@ -15,5 +15,17 @@ export default defineConfig({
     },
     server: {
         allowedHosts: true,
+        proxy: {
+            "/api": {
+                target: "http://localhost:4000",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api/, ""),
+                configure: (proxy) => {
+                    proxy.on("proxyReq", (proxyRequest) => {
+                        proxyRequest.removeHeader("origin");
+                    });
+                },
+            },
+        },
     },
 });
