@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { parseJson, toJson, toConnection, filterByQuery } from '../../common/helpers'
-import { mapOrder, mapReturn, mapOrderRisk } from '../../common/mappers'
+import { mapOrder, mapReturn, mapOrderRisk, mapCustomer } from '../../common/mappers'
 import { uid, roundMoney } from '../../common/ids'
 import { actorId, actorName } from '../../auth/actor'
 
@@ -59,14 +59,14 @@ export class OrdersService {
     })
     if (args.reverse) rows = [...rows].reverse()
     const decorated = await this.decorateOrders(rows)
-    return toConnection(decorated, args.first, args.after)
+    return toConnection(decorated, args.first, args.after, args.last, args.before)
   }
 
   async draftOrders(args: any) {
     let rows = (await this.prisma.order.findMany({ where: { isDraft: true }, orderBy: { createdAt: 'desc' } })) as unknown as Record<string, unknown>[]
     rows = filterByQuery(rows, args.query, (r) => [r.name as string, r.email as string])
     const decorated = await this.decorateOrders(rows)
-    return toConnection(decorated, args.first, args.after)
+    return toConnection(decorated, args.first, args.after, args.last, args.before)
   }
 
   async abandonedCheckouts(first: number) {
@@ -613,7 +613,9 @@ export class OrdersService {
     }
 
     const subtotal = roundMoney(lineItems.reduce((s, li) => s + li.price * li.quantity - (li.totalDiscount ?? 0), 0))
-    const discountAmount = parseJson<{ amount: number } | null>(order.discountCode as string, null)?.amount ?? 0
+    const discountObj = parseJson<{ code: string; amount: number } | null>(order.discountCode as string, null)
+    const rawDiscountAmount = discountObj?.amount ?? 0
+    const discountAmount = Math.min(subtotal, Math.max(0, rawDiscountAmount))
     const customer = await this.prisma.customer.findUnique({ where: { id: order.customerId } })
     const taxTotal = await this.taxFromSettings({
       taxExempt: Boolean(customer?.taxExempt),
@@ -623,8 +625,10 @@ export class OrdersService {
     })
     const total = roundMoney(Math.max(0, subtotal - discountAmount) + order.shippingPrice + taxTotal)
     const delta = roundMoney(total - order.total)
-
-    await this.prisma.order.update({ where: { id }, data: { lineItems: toJson(lineItems), subtotal, taxTotal, total } })
+    await this.prisma.order.update({
+      where: { id },
+      data: { lineItems: toJson(lineItems), subtotal, taxTotal, total },
+    })
     await this.prisma.orderEdit.create({
       data: {
         id: uid('oe'),
@@ -917,6 +921,22 @@ export class OrdersService {
       total: roundMoney(Math.max(0, subtotal - discountAmount) + shippingPrice + taxTotal),
     }
   }
+  async calculateDraft(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const computed = await this.buildDraftComputation(input)
+    return {
+      subtotal: computed.subtotal,
+      taxTotal: computed.taxTotal,
+      shippingPrice: computed.shippingPrice,
+      totalDiscount: computed.discountAmount,
+      total: computed.total,
+      lineItems: computed.lineItems,
+      customer: mapCustomer(computed.customer as unknown as Record<string, unknown>),
+      shippingAddress: computed.addr,
+      billingAddress: computed.addr,
+      discountCode: computed.discountCodeObj,
+    }
+  }
+
 
   async createDraft(input: any): Promise<any> {
     const computed = await this.buildDraftComputation(input)

@@ -10,9 +10,15 @@ type UserError {
   message: String!
 }
 
+interface Node {
+  id: ID!
+}
+
 type PageInfo {
   hasNextPage: Boolean!
   hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
 }
 
 type Image {
@@ -22,7 +28,7 @@ type Image {
 
 # ─── Products ───────────────────────────────────────────────────────────────
 
-type ProductVariant {
+type ProductVariant implements Node {
   id: ID!
   productId: ID!
   title: String!
@@ -56,7 +62,7 @@ type Seo {
   handle: String!
 }
 
-type Product {
+type Product implements Node {
   id: ID!
   title: String!
   descriptionHtml: String!
@@ -103,6 +109,32 @@ input VariantInput {
   weightGrams: Float
   imageId: ID
   available: Boolean
+}
+
+input ProductVariantInput {
+  productId: ID
+  title: String
+  sku: String
+  barcode: String
+  price: Float
+  compareAtPrice: Float
+  costPerItem: Float
+  optionValues: JSON
+  weightGrams: Float
+  imageId: ID
+  available: Boolean
+  # Convenience field setting available stock at the primary warehouse location. Multi-location adjustments use inventoryAdjust / inventoryBulkAdjust.
+  inventoryQuantity: Int
+}
+
+type ProductVariantPayload {
+  productVariant: ProductVariant
+  userErrors: [UserError!]!
+}
+
+type ProductVariantDeletePayload {
+  deletedProductVariantId: ID
+  userErrors: [UserError!]!
 }
 
 input MediaInput {
@@ -176,7 +208,7 @@ type CollectionRule {
   condition: String!
 }
 
-type Collection {
+type Collection implements Node {
   id: ID!
   title: String!
   descriptionHtml: String!
@@ -254,7 +286,7 @@ type Address {
   phone: String
 }
 
-type Customer {
+type Customer implements Node {
   id: ID!
   firstName: String!
   lastName: String!
@@ -338,7 +370,7 @@ type CompanyContact {
   isPrimary: Boolean!
 }
 
-type Company {
+type Company implements Node {
   id: ID!
   name: String!
   externalId: String
@@ -402,7 +434,7 @@ type SegmentFilter {
   value: String!
 }
 
-type Segment {
+type Segment implements Node {
   id: ID!
   name: String!
   description: String

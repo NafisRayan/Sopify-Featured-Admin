@@ -42,7 +42,7 @@ type Refund {
   restock: Boolean!
 }
 
-type Order {
+type Order implements Node {
   id: ID!
   name: String!
   customerId: ID!
@@ -173,6 +173,34 @@ type OrderEditPayload {
   userErrors: [UserError!]!
 }
 
+input DraftOrderCalculateInput {
+  customerId: ID!
+  items: [OrderLineItemInput!]!
+  note: String
+  tags: [String!]
+  shippingPrice: Float
+  discountAmount: Float
+  discountCode: String
+}
+
+type CalculatedDraftOrder {
+  subtotal: Float!
+  taxTotal: Float!
+  shippingPrice: Float!
+  totalDiscount: Float!
+  total: Float!
+  lineItems: [OrderLineItem!]!
+  customer: Customer
+  shippingAddress: Address
+  billingAddress: Address
+  discountCode: DiscountCodeRef
+}
+
+type DraftOrderCalculatePayload {
+  calculatedDraftOrder: CalculatedDraftOrder
+  userErrors: [UserError!]!
+}
+
 type AbandonedCheckoutPayload {
   checkout: AbandonedCheckout
   userErrors: [UserError!]!
@@ -180,7 +208,7 @@ type AbandonedCheckoutPayload {
 
 # ─── Inventory ──────────────────────────────────────────────────────────────
 
-type Location {
+type Location implements Node {
   id: ID!
   name: String!
   address1: String!
@@ -258,7 +286,7 @@ type TransferLine {
   receivedQuantity: Int!
 }
 
-type Transfer {
+type Transfer implements Node {
   id: ID!
   name: String!
   status: String!

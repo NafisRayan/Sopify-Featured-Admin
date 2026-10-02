@@ -2,8 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { parseJson, toJson, toConnection, filterByQuery, encodeCursor } from '../../common/helpers'
 import { mapProduct, productTotalInventory, mapCollection } from '../../common/mappers'
-import { uid } from '../../common/ids'
-import { slugify } from '../../common/ids'
+import { uid, slugify, roundMoney } from '../../common/ids'
 
 function matchesRules(
   product: { tags: string[]; title: string; productType: string; vendor: string },
@@ -121,7 +120,7 @@ export class ProductsService {
     ])
     if (args.reverse) rows = [...rows].reverse()
     const decorated = await this.decorate(rows)
-    return toConnection(decorated, args.first, args.after)
+    return toConnection(decorated, args.first, args.after, args.last, args.before)
   }
 
   async create(input: Record<string, any>): Promise<any> {
@@ -273,6 +272,191 @@ export class ProductsService {
     return (await this.decorate([copy as unknown as Record<string, unknown>]))[0]
   }
 
+  private async findProductForVariant(variantId: string) {
+    const direct = await this.prisma.product.findFirst({
+      where: { variants: { array_contains: [{ id: variantId }] } },
+    })
+    if (direct) {
+      const vars = parseJson<Record<string, unknown>[]>(direct.variants as string, [])
+      const idx = vars.findIndex((v) => v.id === variantId)
+      if (idx >= 0) return { product: direct, index: idx, variant: vars[idx] }
+    }
+    const products = await this.prisma.product.findMany()
+    for (const p of products) {
+      const vars = parseJson<Record<string, unknown>[]>(p.variants as string, [])
+      const idx = vars.findIndex((v) => v.id === variantId)
+      if (idx >= 0) return { product: p, index: idx, variant: vars[idx] }
+    }
+    return null
+  }
+
+  async createVariant(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const productId = input.productId as string | undefined
+    if (!productId) throw new Error('productId is required to create a variant')
+    const product = await this.prisma.product.findUnique({ where: { id: productId } })
+    if (!product) throw new Error(`Product ${productId} not found`)
+
+    const variants = parseJson<Record<string, unknown>[]>(product.variants as string, [])
+    const sku = typeof input.sku === 'string' ? input.sku.trim() : ''
+    if (sku) {
+      await this.assertUniqueSkus([{ sku }])
+    }
+
+    const varId = uid('var')
+    const optionValues = (input.optionValues ?? {}) as Record<string, unknown>
+    const newVariant: Record<string, unknown> = {
+      id: varId,
+      productId,
+      title: input.title || `Variant ${variants.length + 1}`,
+      sku,
+      barcode: input.barcode ?? null,
+      price: roundMoney(Number(input.price) || 0),
+      compareAtPrice: input.compareAtPrice != null ? roundMoney(Number(input.compareAtPrice)) : null,
+      costPerItem: input.costPerItem != null ? roundMoney(Number(input.costPerItem)) : null,
+      optionValues,
+      weightGrams: input.weightGrams ?? null,
+      imageId: input.imageId ?? null,
+      available: input.available ?? true,
+      inventoryQuantity: input.inventoryQuantity != null ? Math.max(0, Number(input.inventoryQuantity) || 0) : 0,
+    }
+
+    // Synchronize product.options with new variant's optionValues
+    const currentOptions = parseJson<{ name: string; values: string[] }[]>(product.options as string, [])
+    let optionsChanged = false
+    for (const [optName, optVal] of Object.entries(optionValues)) {
+      if (!optName || optVal == null) continue
+      const strVal = String(optVal).trim()
+      if (!strVal) continue
+      const existing = currentOptions.find((o) => o.name.toLowerCase() === optName.toLowerCase())
+      if (existing) {
+        if (!existing.values.includes(strVal)) {
+          existing.values.push(strVal)
+          optionsChanged = true
+        }
+      } else {
+        currentOptions.push({ name: optName, values: [strVal] })
+        optionsChanged = true
+      }
+    }
+
+    variants.push(newVariant)
+    await this.ensureVariantLevels([{ id: varId, inventoryQuantity: Number(newVariant.inventoryQuantity) }])
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: {
+        variants: toJson(variants),
+        ...(optionsChanged ? { options: toJson(currentOptions) } : {}),
+        updatedAt: new Date(),
+      },
+    })
+
+    return newVariant
+  }
+
+  async updateVariant(id: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const target = await this.findProductForVariant(id)
+    if (!target) throw new Error(`Variant ${id} not found`)
+    const { product: targetProduct, index: targetIndex, variant: targetVariant } = target
+
+    const sku = input.sku !== undefined ? (typeof input.sku === 'string' ? input.sku.trim() : '') : (targetVariant.sku as string)
+    if (sku && sku !== targetVariant.sku) {
+      await this.assertUniqueSkus([{ sku }])
+    }
+
+    const newQty = input.inventoryQuantity !== undefined ? Math.max(0, Number(input.inventoryQuantity) || 0) : undefined
+
+    // Synchronize product.options with updated variant's optionValues if provided
+    const currentOptions = parseJson<{ name: string; values: string[] }[]>(targetProduct.options as string, [])
+    let optionsChanged = false
+    if (input.optionValues && typeof input.optionValues === 'object') {
+      for (const [optName, optVal] of Object.entries(input.optionValues as Record<string, unknown>)) {
+        if (!optName || optVal == null) continue
+        const strVal = String(optVal).trim()
+        if (!strVal) continue
+        const existing = currentOptions.find((o) => o.name.toLowerCase() === optName.toLowerCase())
+        if (existing) {
+          if (!existing.values.includes(strVal)) {
+            existing.values.push(strVal)
+            optionsChanged = true
+          }
+        } else {
+          currentOptions.push({ name: optName, values: [strVal] })
+          optionsChanged = true
+        }
+      }
+    }
+
+    const variants = parseJson<Record<string, unknown>[]>(targetProduct.variants as string, [])
+    const updated: Record<string, unknown> = {
+      ...targetVariant,
+      ...(input.title !== undefined ? { title: input.title } : {}),
+      ...(input.sku !== undefined ? { sku } : {}),
+      ...(input.barcode !== undefined ? { barcode: input.barcode } : {}),
+      ...(input.price !== undefined ? { price: roundMoney(Number(input.price) || 0) } : {}),
+      ...(input.compareAtPrice !== undefined ? { compareAtPrice: input.compareAtPrice != null ? roundMoney(Number(input.compareAtPrice)) : null } : {}),
+      ...(input.costPerItem !== undefined ? { costPerItem: input.costPerItem != null ? roundMoney(Number(input.costPerItem)) : null } : {}),
+      ...(input.optionValues !== undefined ? { optionValues: input.optionValues } : {}),
+      ...(input.weightGrams !== undefined ? { weightGrams: input.weightGrams } : {}),
+      ...(input.imageId !== undefined ? { imageId: input.imageId } : {}),
+      ...(input.available !== undefined ? { available: Boolean(input.available) } : {}),
+      ...(newQty !== undefined ? { inventoryQuantity: newQty } : {}),
+    }
+
+    // If inventoryQuantity was passed, update the primary active location (matches createVariant)
+    if (newQty !== undefined) {
+      const locations = await this.prisma.location.findMany({ where: { active: true } })
+      if (locations.length > 0) {
+        const primaryLoc = locations[0]
+        const existingLevel = await this.prisma.inventoryLevel.findUnique({
+          where: { variantId_locationId: { variantId: id, locationId: primaryLoc.id } },
+        })
+        if (existingLevel) {
+          await this.prisma.inventoryLevel.update({
+            where: { variantId_locationId: { variantId: id, locationId: primaryLoc.id } },
+            data: { available: newQty },
+          })
+        } else {
+          await this.prisma.inventoryLevel.create({
+            data: { variantId: id, locationId: primaryLoc.id, available: newQty, committed: 0, unavailable: 0 },
+          })
+        }
+      }
+    }
+
+    variants[targetIndex] = updated
+    await this.prisma.product.update({
+      where: { id: targetProduct.id },
+      data: {
+        variants: toJson(variants),
+        ...(optionsChanged ? { options: toJson(currentOptions) } : {}),
+        updatedAt: new Date(),
+      },
+    })
+
+    return updated
+  }
+
+  async deleteVariant(id: string): Promise<string> {
+    const target = await this.findProductForVariant(id)
+    if (!target) throw new Error(`Variant ${id} not found`)
+    const { product: targetProduct, index: targetIndex } = target
+
+    const variants = parseJson<Record<string, unknown>[]>(targetProduct.variants as string, [])
+    if (variants.length <= 1) {
+      throw new Error('Cannot delete the only variant of a product')
+    }
+
+    variants.splice(targetIndex, 1)
+    await this.prisma.inventoryLevel.deleteMany({ where: { variantId: id } })
+    await this.prisma.product.update({
+      where: { id: targetProduct.id },
+      data: { variants: toJson(variants), updatedAt: new Date() },
+    })
+
+    return id
+  }
+
+
   async setStatus(ids: string[], status: string): Promise<string[]> {
     await this.prisma.product.updateMany({ where: { id: { in: ids } }, data: { status, updatedAt: new Date() } })
     return ids
@@ -310,7 +494,7 @@ export class ProductsService {
     let rows = (await this.prisma.collection.findMany({ orderBy: { title: 'asc' } })) as unknown as Record<string, unknown>[]
     rows = filterByQuery(rows, args.query, (r) => [r.title as string, r.handle as string])
     const mapped = rows.map(mapCollection)
-    return toConnection(mapped, args.first, args.after)
+    return toConnection(mapped, args.first, args.after, args.last, args.before)
   }
 
   private async evaluateSmart(rules: { column: string; relation: string; condition: string }[], match: 'all' | 'any'): Promise<string[]> {

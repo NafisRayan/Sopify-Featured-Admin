@@ -1,6 +1,6 @@
 # ─── Content & online store ─────────────────────────────────────────────────
 
-type StorePage {
+type StorePage implements Node {
   id: ID!
   title: String!
   contentHtml: String!
@@ -17,7 +17,7 @@ type PagePayload {
   userErrors: [UserError!]!
 }
 
-type BlogPost {
+type BlogPost implements Node {
   id: ID!
   title: String!
   author: String!
@@ -34,7 +34,7 @@ type PostPayload {
   userErrors: [UserError!]!
 }
 
-type FileAsset {
+type FileAsset implements Node {
   id: ID!
   name: String!
   type: String!
@@ -57,7 +57,7 @@ type MenuItem {
   children: [MenuItem!]!
 }
 
-type NavMenu {
+type NavMenu implements Node {
   id: ID!
   title: String!
   handle: String!
@@ -69,7 +69,7 @@ type MenuPayload {
   userErrors: [UserError!]!
 }
 
-type UrlRedirect {
+type UrlRedirect implements Node {
   id: ID!
   from: String!
   to: String!
@@ -87,13 +87,13 @@ type MetaobjectFieldDef {
   type: String!
 }
 
-type MetaobjectDefinition {
+type MetaobjectDefinition implements Node {
   id: ID!
   name: String!
   fields: [MetaobjectFieldDef!]!
 }
 
-type MetaobjectEntry {
+type MetaobjectEntry implements Node {
   id: ID!
   definitionId: ID!
   fields: JSON!
@@ -151,7 +151,7 @@ input MetaobjectEntryInput {
 
 # ─── Staff / access ─────────────────────────────────────────────────────────
 
-type StaffMember {
+type StaffMember implements Node {
   id: ID!
   name: String!
   email: String!

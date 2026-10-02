@@ -50,7 +50,7 @@ export class CustomersService {
     const statsMap = new Map<string, Awaited<ReturnType<CustomersService['statsFor']>>>()
     for (const r of rows) statsMap.set(r.id as string, await this.statsFor(r.id as string))
     const decorated = this.decorate(rows, statsMap)
-    return toConnection(decorated, args.first, args.after)
+    return toConnection(decorated, args.first, args.after, args.last, args.before)
   }
 
   async create(input: Record<string, any>) {
@@ -150,7 +150,7 @@ export class CustomersService {
     let rows = (await this.prisma.company.findMany({ orderBy: { name: 'asc' } })) as unknown as Record<string, unknown>[]
     rows = filterByQuery(rows, args.query, (r) => [r.name as string, (r.externalId as string) ?? ''])
     const decorated = await Promise.all(rows.map((r) => this.decorateCompany(r)))
-    return toConnection(decorated, args.first, args.after)
+    return toConnection(decorated, args.first, args.after, args.last, args.before)
   }
 
   async createCompany(input: Record<string, any>) {

@@ -5,9 +5,10 @@ Comparison of this backend's GraphQL surface against the Shopify Admin GraphQL A
 
 **Conventions replicated**
 
-- QueryRoot with singular `product(id)` / plural `products(first, after, query, reverse)` patterns
+- QueryRoot with singular `product(id)` / plural `products(first, after, last, before, query, reverse)` patterns
+- Relay Global Object Identification: `interface Node { id: ID! }`, `node(id: ID!): Node`, and `nodes(ids: [ID!]!): [Node]!` supporting both `gid://shopify/<Type>/<id>` and internal IDs
 - Relay-style connections: `*Edge { cursor, node }`, `*Connection { edges, pageInfo, totalCount }`
-- Opaque base64 cursors, `pageInfo { hasNextPage hasPreviousPage }`
+- Full Relay `PageInfo`: `hasNextPage`, `hasPreviousPage`, `startCursor`, `endCursor` with bidirectional slicing (`first`/`after` and `last`/`before`)
 - Mutations return `*Payload { entity, userErrors: [UserError!]! }` (never throw for expected failures)
 - Domain + entity naming and status vocabularies (payment/fulfillment/discount statuses, etc.)
 - `shop` singleton, `node`-style id lookups per domain
@@ -25,10 +26,10 @@ Comparison of this backend's GraphQL surface against the Shopify Admin GraphQL A
 
 | Shopify domain | Our query/mutation surface | Status |
 |---|---|---|
-| Products (Product, Variant, Option, Media, Publication) | `product(s)`, `productCreate/Update/Delete/Duplicate`, `productStatusSet`, `productAddTags/RemoveTags`, `productMediaReorder`, options & variants via `ProductInput`, REST `/uploads` with auth check | 🔶 Core (admin-side; no multi-channel publishing) |
+| Products (Product, Variant, Option, Media, Publication) | `product(s)`, `productCreate/Update/Delete/Duplicate`, `productVariantCreate/Update/Delete` (sets primary warehouse stock; multi-location balancing uses `inventoryAdjust`), `productStatusSet`, `productAddTags/RemoveTags`, `productMediaReorder`, options & variants via `ProductInput`, REST `/uploads` with auth check | 🔶 Core (admin-side; granular variant CRUD supported; no multi-channel publishing) |
 | Collections (Smart/Manual) | `collection(s)`, `collectionCreate/Update/Delete`, `collectionAddProducts/RemoveProducts`, smart-rule evaluation | 🔶 Core (rule evaluation on save) |
 | Orders (Order, LineItem, Fulfillment, Refund, Transaction, Risk) | `order(s)`, `orderMarkAsPaid`, `orderCancel`, `orderClose/Reopen`, `orderFulfill`, `orderRefund`, `orderEdit`, inventory ledger reservation, status guards, risk analysis, timeline | 🔶 Core (admin-side; transactions recorded on mark-paid/refund) |
-| Draft orders (DraftOrder, invoice) | `draftOrders`, `draftOrderCreate/Update/Delete`, `draftOrderConvert`, `draftOrderInvoiceSend`, discounts & tax-exempt calculation | 🔶 Core (admin-side) |
+| Draft orders (DraftOrder, invoice) | `draftOrders`, `draftOrderCreate/Update/Delete`, `draftOrderCalculate`, `draftOrderConvert`, `draftOrderInvoiceSend`, discounts & tax-exempt calculation | 🔶 Core (admin-side live calculation & conversion) |
 | Returns & exchanges (Return, ReturnLine) | `returnCreate`, `returnClose`, `returnsForOrder`, restock at fulfillment location + refund semantics | 🔶 Core (staff return resolution) |
 | Abandoned checkouts | `abandonedCheckouts`, `abandonedCheckoutRecoverySend`, `abandonedCheckoutConvert` | 🔶 Partial (recovery state flag and conversion flow) |
 | Customers (Customer, Address, consent) | `customer(s)`, `customerCreate/Update/Delete`, tags, addresses, default address, consent, derived stats with refund deduction | 🔶 Core (admin-side) |
@@ -40,7 +41,7 @@ Comparison of this backend's GraphQL surface against the Shopify Admin GraphQL A
 | Discounts (DiscountCodeBasic/Bxgy/FreeShipping, combinations) | `discounts`, `discountCreate/Update/Delete/StatusSet`, code lookup & validation at order create, usedCount increments | 🔶 Core (code & fixed/percentage calculation) |
 | Marketing (Campaign, activity) | `campaigns`, `campaignCreate/Launch/Complete/Delete`, attributed order metrics | 🔶 Partial (demo simulation) |
 | Shopify Payments (Payout, BalanceTransaction) | `payouts`, `balanceTransactions` (charges/refunds/fees recorded on orders) | 🔶 Read-model (derived transactions; no live gateway processor) |
-| Gift cards | `giftCards`, `giftCardCreate/Disable/Enable/BalanceAdjust`, history with correct status tracking | 🔶 Core (issue/adjust/disable and tender integration) |
+| Gift cards | `giftCards`, `giftCardCreate/Disable/Enable/BalanceAdjust/SendNotification`, history with correct status tracking | 🔶 Core (issue/adjust/disable/notify and tender integration) |
 | Online store (Page, Article/Blog, Menu, Redirect, File) | `pages`, `blogPosts`, `files`, `menus`, `redirects` + CRUD sets synced remotely | 🔶 Core (CMS and redirects; no public storefront engine) |
 | Metafields (definitions + values) | `metafieldDefinitions`, `metafields`, `metafieldDefinitionCreate/Delete`, `metafieldsSet` | 🔶 Core |
 | Metaobjects | `metaobjectDefinitions`, `metaobjectEntries` + create/update/delete | 🔶 Core |

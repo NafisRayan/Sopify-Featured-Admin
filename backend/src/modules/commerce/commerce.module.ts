@@ -20,7 +20,7 @@ export class CommerceService {
     let rows = (await this.prisma.discount.findMany({ orderBy: { startsAt: 'desc' } })) as unknown as Record<string, unknown>[]
     rows = filterByQuery(rows, args.query, (r) => [r.code as string, r.title as string])
     const mapped = rows.map(mapDiscount)
-    return toConnection(mapped, args.first, args.after)
+    return toConnection(mapped, args.first, args.after, args.last, args.before)
   }
 
   async createDiscount(input: Record<string, any>) {
@@ -160,7 +160,7 @@ export class CommerceService {
     let rows = (await this.prisma.giftCard.findMany({ orderBy: { createdAt: 'desc' } })) as unknown as Record<string, unknown>[]
     rows = filterByQuery(rows, args.query, (r) => [r.code as string, r.note as string])
     const mapped = rows.map(mapGiftCard)
-    return toConnection(mapped, args.first, args.after)
+    return toConnection(mapped, args.first, args.after, args.last, args.before)
   }
 
   async createGiftCard(input: any) {
@@ -202,6 +202,39 @@ export class CommerceService {
     const change = roundMoney(newBalance - card.balance)
     history.push({ id: uid('gch'), at: new Date().toISOString(), type: 'adjusted', amount: change, note: note ?? 'Adjusted by staff' })
     await this.prisma.giftCard.update({ where: { id }, data: { balance: roundMoney(newBalance), history: toJson(history) } })
+    return this.giftCard(id)
+  }
+
+  async sendNotification(id: string) {
+    const card = await this.prisma.giftCard.findUnique({ where: { id } })
+    if (!card) throw new Error('Gift card not found')
+    if (card.status === 'disabled') {
+      throw new Error('Cannot send notification for a disabled gift card')
+    }
+    if (card.expiresAt && new Date() > card.expiresAt) {
+      throw new Error('Cannot send notification for an expired gift card')
+    }
+    const history = parseJson<unknown[]>(card.history as string, [])
+    history.push({
+      id: uid('gch'),
+      at: new Date().toISOString(),
+      type: 'notification_sent',
+      amount: 0,
+      note: 'Gift card notification sent to customer',
+    })
+    await this.prisma.giftCard.update({
+      where: { id },
+      data: { history: toJson(history) },
+    })
+    await this.prisma.notification.create({
+      data: {
+        id: uid('notif'),
+        kind: 'gift_card',
+        title: 'Gift Card Sent',
+        body: `Gift card ${card.code} was sent to customer`,
+        link: `/gift-cards/${card.id}`,
+      },
+    })
     return this.giftCard(id)
   }
 }
@@ -328,6 +361,16 @@ export class CommerceResolver {
       return { giftCard: await this.service.adjustGiftCard(id, newBalance, note), userErrors: [] }
     } catch (e) {
       return { giftCard: null, userErrors: [{ field: ['newBalance'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async giftCardSendNotification(@Args('id') id: string) {
+    try {
+      return { giftCard: await this.service.sendNotification(id), userErrors: [] }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      return { giftCard: null, userErrors: [{ field: ['id'], message }] }
     }
   }
 }

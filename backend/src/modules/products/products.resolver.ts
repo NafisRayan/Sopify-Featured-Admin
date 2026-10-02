@@ -11,7 +11,7 @@ export class ProductsResolver {
   }
 
   @Query()
-  products(@Args() args: { first: number; after?: string; query?: string; reverse?: boolean; status?: string }) {
+  products(@Args() args: { first?: number; after?: string; last?: number; before?: string; query?: string; reverse?: boolean; status?: string }) {
     return this.service.products(args)
   }
 
@@ -21,7 +21,7 @@ export class ProductsResolver {
   }
 
   @Query()
-  collections(@Args() args: { first: number; after?: string; query?: string }) {
+  collections(@Args() args: { first?: number; after?: string; last?: number; before?: string; query?: string }) {
     return this.service.collections(args)
   }
 
@@ -80,6 +80,36 @@ export class ProductsResolver {
       return { product: null, userErrors: [{ field: ['mediaIds'], message: (e as Error).message }] }
     }
   }
+  @Mutation()
+  async productVariantCreate(@Args('input') input: Record<string, unknown>) {
+    try {
+      return { productVariant: await this.service.createVariant(input), userErrors: [] }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      return { productVariant: null, userErrors: [{ field: ['input'], message }] }
+    }
+  }
+
+  @Mutation()
+  async productVariantUpdate(@Args('id') id: string, @Args('input') input: Record<string, unknown>) {
+    try {
+      return { productVariant: await this.service.updateVariant(id, input), userErrors: [] }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      return { productVariant: null, userErrors: [{ field: ['id'], message }] }
+    }
+  }
+
+  @Mutation()
+  async productVariantDelete(@Args('id') id: string) {
+    try {
+      return { deletedProductVariantId: await this.service.deleteVariant(id), userErrors: [] }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      return { deletedProductVariantId: null, userErrors: [{ field: ['id'], message }] }
+    }
+  }
+
 
   @Mutation()
   async collectionCreate(@Args('collection') collection: Record<string, any>) {

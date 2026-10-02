@@ -1,9 +1,25 @@
 import { Injectable, Module } from '@nestjs/common'
-import { Resolver, Query, Mutation, Args } from '@nestjs/graphql'
+import { Resolver, Query, Mutation, Args, ResolveField } from '@nestjs/graphql'
 import { PrismaService } from '../../prisma/prisma.service'
 import { PrismaModule } from '../../prisma/prisma.module'
 import { parseJson, toJson } from '../../common/helpers'
-import { mapCustomer } from '../../common/mappers'
+import {
+  mapProduct,
+  mapCollection,
+  mapCustomer,
+  mapOrder,
+  mapCompany,
+  mapSegment,
+  mapTransfer,
+  mapDiscount,
+  mapGiftCard,
+  mapMenu,
+  mapFile,
+  mapStaff,
+  mapMetaobjectDefinition,
+  mapMetaobjectEntry,
+  mapOrderRisk,
+} from '../../common/mappers'
 import { uid, slugify, roundMoney } from '../../common/ids'
 import { actorId, actorName } from '../../auth/actor'
 import { AuthorizationService } from '../../auth/authorization.service'
@@ -629,6 +645,257 @@ export class StoreContentService {
     const rows = await this.prisma.giftCard.findMany({ orderBy: { createdAt: 'desc' } })
     return rows.map((r) => ({ ...r, history: parseJson(r.history as string, []) }))
   }
+  private async loadProductNode(rawId: string): Promise<Record<string, unknown> | null> {
+    const p = await this.prisma.product.findUnique({ where: { id: rawId } })
+    if (!p) return null
+    const mapped = mapProduct(p as unknown as Record<string, unknown>)
+    const variants = parseJson<{ id: string }[]>(p.variants as string, [])
+    const variantIds = variants.map((v) => v.id)
+    const levels = await this.prisma.inventoryLevel.findMany({
+      where: { variantId: { in: variantIds } },
+    })
+    const levelMap = new Map<string, number>()
+    for (const l of levels) levelMap.set(l.variantId, (levelMap.get(l.variantId) ?? 0) + l.available)
+    mapped.totalInventory = p.trackQuantity
+      ? variants.reduce((s, v) => s + (levelMap.get(v.id) ?? 0), 0)
+      : 0
+    return { ...mapped, __typename: 'Product' }
+  }
+
+  private async loadCustomerNode(rawId: string): Promise<Record<string, unknown> | null> {
+    const c = await this.prisma.customer.findUnique({ where: { id: rawId } })
+    if (!c) return null
+    const orders = await this.prisma.order.findMany({
+      where: { customerId: rawId, isDraft: false },
+      select: { total: true, status: true, paymentStatus: true, createdAt: true, refunds: true },
+    })
+    const validOrders = orders.filter((o) => o.status !== 'cancelled')
+    const totalSpent = roundMoney(
+      validOrders.reduce((s, o) => {
+        const refunds = parseJson<{ amount?: number }[]>(o.refunds as string, [])
+        const refundedAmount = refunds.reduce((rs, r) => rs + (r.amount ?? 0), 0)
+        return s + Math.max(0, o.total - refundedAmount)
+      }, 0),
+    )
+    const last = validOrders.sort((a, b) => b.createdAt.toISOString().localeCompare(a.createdAt.toISOString()))[0]
+    return {
+      ...mapCustomer(c as unknown as Record<string, unknown>, {
+        ordersCount: validOrders.length,
+        totalSpent,
+        lastOrderAt: last?.createdAt ?? null,
+      }),
+      __typename: 'Customer',
+    }
+  }
+
+  private async loadSegmentNode(rawId: string): Promise<Record<string, unknown> | null> {
+    const s = await this.prisma.segment.findUnique({ where: { id: rawId } })
+    if (!s) return null
+    const allCustomers = await this.prisma.customer.findMany()
+    const filters = parseJson<{ column: string; relation: string; value: string }[]>(s.filters as string, [])
+    const allOrders = await this.prisma.order.findMany({ where: { isDraft: false } })
+
+    const statsMap = new Map<string, { ordersCount: number; totalSpent: number }>()
+    for (const cust of allCustomers) {
+      const custOrders = allOrders.filter((o) => o.customerId === cust.id && o.status !== 'cancelled')
+      const totalSpent = roundMoney(
+        custOrders.reduce((sum, o) => {
+          const refunds = parseJson<{ amount?: number }[]>(o.refunds as string, [])
+          const refundedAmount = refunds.reduce((rs, r) => rs + (r.amount ?? 0), 0)
+          return sum + Math.max(0, o.total - refundedAmount)
+        }, 0),
+      )
+      statsMap.set(cust.id, { ordersCount: custOrders.length, totalSpent })
+    }
+
+    const matched = allCustomers.filter((cust) => {
+      const stats = statsMap.get(cust.id) ?? { ordersCount: 0, totalSpent: 0 }
+      return filters.every((f) => {
+        const val = f.value.trim().toLowerCase()
+        if (f.column === 'tag') {
+          const tags = parseJson<string[]>(cust.tags as string, []).map((t) => t.toLowerCase())
+          if (f.relation === 'equals') return tags.includes(val)
+          if (f.relation === 'contains') return tags.some((t) => t.includes(val))
+          return false
+        }
+        const actual =
+          f.column === 'orders_count' ? stats.ordersCount
+          : f.column === 'total_spent' ? stats.totalSpent
+          : f.column === 'email_state' ? cust.emailMarketingConsent
+          : f.column === 'city' ? (parseJson<{ city?: string }>(cust.defaultAddress as string, {})?.city ?? '')
+          : (parseJson<{ country?: string }>(cust.defaultAddress as string, {})?.country ?? '')
+        const numeric = Number(val)
+        switch (f.relation) {
+          case 'gt': return !Number.isNaN(numeric) && Number(actual) > numeric
+          case 'lt': return !Number.isNaN(numeric) && Number(actual) < numeric
+          case 'equals': return String(actual).toLowerCase() === val
+          case 'contains': return String(actual).toLowerCase().includes(val)
+          default: return false
+        }
+      })
+    })
+    return { ...mapSegment(s as unknown as Record<string, unknown>, matched.length), __typename: 'Segment' }
+  }
+
+  async node(id: string): Promise<Record<string, unknown> | null> {
+    if (!id) return null
+    const gidMatch = id.match(/^gid:\/\/shopify\/([A-Za-z]+)\/(.+)$/)
+    const explicitType = gidMatch ? gidMatch[1].toLowerCase() : null
+    const rawId = gidMatch ? gidMatch[2] : id
+    const isTypedGid = Boolean(explicitType)
+
+    let inferredType = explicitType
+    if (!inferredType) {
+      if (rawId.startsWith('p_')) inferredType = 'product'
+      else if (rawId.startsWith('col_')) inferredType = 'collection'
+      else if (rawId.startsWith('o_')) inferredType = 'order'
+      else if (rawId.startsWith('c_')) inferredType = 'customer'
+      else if (rawId.startsWith('company_')) inferredType = 'company'
+      else if (rawId.startsWith('seg_')) inferredType = 'segment'
+      else if (rawId.startsWith('loc_')) inferredType = 'location'
+      else if (rawId.startsWith('tf_')) inferredType = 'transfer'
+      else if (rawId.startsWith('disc_')) inferredType = 'discount'
+      else if (rawId.startsWith('camp_')) inferredType = 'campaign'
+      else if (rawId.startsWith('gc_')) inferredType = 'giftcard'
+      else if (rawId.startsWith('page_')) inferredType = 'storepage'
+      else if (rawId.startsWith('post_')) inferredType = 'blogpost'
+      else if (rawId.startsWith('file_')) inferredType = 'fileasset'
+      else if (rawId.startsWith('menu_')) inferredType = 'navmenu'
+      else if (rawId.startsWith('red_')) inferredType = 'urlredirect'
+      else if (rawId.startsWith('mod_e_')) inferredType = 'metaobjectentry'
+      else if (rawId.startsWith('mod_')) inferredType = 'metaobjectdefinition'
+      else if (rawId.startsWith('mfdef_')) inferredType = 'metafielddefinition'
+      else if (rawId.startsWith('mf_')) inferredType = 'metafield'
+      else if (rawId.startsWith('staff_')) inferredType = 'staffmember'
+      else if (rawId.startsWith('var_')) inferredType = 'productvariant'
+    }
+
+    if (inferredType === 'productvariant' || inferredType === 'variant') {
+      const p = await this.prisma.product.findFirst({
+        where: { variants: { array_contains: [{ id: rawId }] } },
+      })
+      if (p) {
+        const vars = parseJson<Record<string, unknown>[]>(p.variants as string, [])
+        const v = vars.find((x) => x.id === rawId)
+        if (v) return { ...v, __typename: 'ProductVariant' }
+      }
+      return null
+    }
+
+    if (inferredType === 'product') {
+      return this.loadProductNode(rawId)
+    }
+    if (inferredType === 'order') {
+      const o = await this.prisma.order.findUnique({ where: { id: rawId } })
+      if (!o) return null
+      const risk = await this.prisma.orderRisk.findUnique({ where: { orderId: rawId } })
+      return { ...mapOrder(o as unknown as Record<string, unknown>, mapOrderRisk(risk as unknown as Record<string, unknown>)), __typename: 'Order' }
+    }
+    if (inferredType === 'customer') {
+      return this.loadCustomerNode(rawId)
+    }
+    if (inferredType === 'collection') {
+      const c = await this.prisma.collection.findUnique({ where: { id: rawId } })
+      return c ? { ...mapCollection(c as unknown as Record<string, unknown>), __typename: 'Collection' } : null
+    }
+    if (inferredType === 'company') {
+      const c = await this.prisma.company.findUnique({ where: { id: rawId } })
+      return c ? { ...mapCompany(c as unknown as Record<string, unknown>), __typename: 'Company' } : null
+    }
+    if (inferredType === 'segment') {
+      return this.loadSegmentNode(rawId)
+    }
+    if (inferredType === 'location') {
+      const l = await this.prisma.location.findUnique({ where: { id: rawId } })
+      return l ? { ...l, __typename: 'Location' } : null
+    }
+    if (inferredType === 'transfer') {
+      const t = await this.prisma.transfer.findUnique({ where: { id: rawId } })
+      return t ? { ...mapTransfer(t as unknown as Record<string, unknown>), __typename: 'Transfer' } : null
+    }
+    if (inferredType === 'discount') {
+      const d = await this.prisma.discount.findUnique({ where: { id: rawId } })
+      return d ? { ...mapDiscount(d as unknown as Record<string, unknown>), __typename: 'Discount' } : null
+    }
+    if (inferredType === 'campaign') {
+      const c = await this.prisma.campaign.findUnique({ where: { id: rawId } })
+      return c ? { ...c, __typename: 'Campaign' } : null
+    }
+    if (inferredType === 'giftcard') {
+      const g = await this.prisma.giftCard.findUnique({ where: { id: rawId } })
+      return g ? { ...mapGiftCard(g as unknown as Record<string, unknown>), __typename: 'GiftCard' } : null
+    }
+    if (inferredType === 'storepage' || inferredType === 'page') {
+      const sp = await this.prisma.storePage.findUnique({ where: { id: rawId } })
+      return sp ? { ...sp, __typename: 'StorePage' } : null
+    }
+    if (inferredType === 'blogpost' || inferredType === 'article') {
+      const bp = await this.prisma.blogPost.findUnique({ where: { id: rawId } })
+      return bp ? { ...bp, tags: parseJson(bp.tags as string, []), __typename: 'BlogPost' } : null
+    }
+    if (inferredType === 'fileasset' || inferredType === 'file') {
+      const fa = await this.prisma.fileAsset.findUnique({ where: { id: rawId } })
+      return fa ? { ...mapFile(fa as unknown as Record<string, unknown>), __typename: 'FileAsset' } : null
+    }
+    if (inferredType === 'navmenu' || inferredType === 'menu') {
+      let nm = await this.prisma.navMenu.findUnique({ where: { id: rawId } })
+      if (!nm) nm = await this.prisma.navMenu.findUnique({ where: { handle: rawId } })
+      return nm ? { ...mapMenu(nm as unknown as Record<string, unknown>), __typename: 'NavMenu' } : null
+    }
+    if (inferredType === 'urlredirect' || inferredType === 'redirect') {
+      const ur = await this.prisma.redirect.findUnique({ where: { id: rawId } })
+      return ur ? { ...ur, __typename: 'UrlRedirect' } : null
+    }
+    if (inferredType === 'metaobjectdefinition') {
+      const mod = await this.prisma.metaobjectDefinition.findUnique({ where: { id: rawId } })
+      return mod ? { ...mapMetaobjectDefinition(mod as unknown as Record<string, unknown>), __typename: 'MetaobjectDefinition' } : null
+    }
+    if (inferredType === 'metaobjectentry') {
+      const moe = await this.prisma.metaobjectEntry.findUnique({ where: { id: rawId } })
+      return moe ? { ...mapMetaobjectEntry(moe as unknown as Record<string, unknown>), __typename: 'MetaobjectEntry' } : null
+    }
+    if (inferredType === 'metafielddefinition') {
+      const mfd = await this.prisma.metafieldDefinition.findUnique({ where: { id: rawId } })
+      return mfd ? { ...mfd, __typename: 'MetafieldDefinition' } : null
+    }
+    if (inferredType === 'metafield') {
+      const mf = await this.prisma.metafield.findUnique({ where: { id: rawId } })
+      return mf ? { ...mf, __typename: 'Metafield' } : null
+    }
+    if (inferredType === 'staffmember' || inferredType === 'staff') {
+      const sm = await this.prisma.staffMember.findUnique({ where: { id: rawId } })
+      return sm ? { ...mapStaff(sm as unknown as Record<string, unknown>), __typename: 'StaffMember' } : null
+    }
+
+    // If type was explicitly given (typed GID) or inferred from prefix and not found, never fallback
+    if (isTypedGid || inferredType) {
+      return null
+    }
+
+    // Fallback search only for untyped, prefix-less raw IDs
+    const p = await this.loadProductNode(rawId)
+    if (p) return p
+
+    const o = await this.prisma.order.findUnique({ where: { id: rawId } })
+    if (o) {
+      const risk = await this.prisma.orderRisk.findUnique({ where: { orderId: rawId } })
+      return { ...mapOrder(o as unknown as Record<string, unknown>, mapOrderRisk(risk as unknown as Record<string, unknown>)), __typename: 'Order' }
+    }
+
+    const c = await this.loadCustomerNode(rawId)
+    if (c) return c
+
+    const col = await this.prisma.collection.findUnique({ where: { id: rawId } })
+    if (col) return { ...mapCollection(col as unknown as Record<string, unknown>), __typename: 'Collection' }
+    return null
+  }
+
+  async nodes(ids: string[]): Promise<(Record<string, unknown> | null)[]> {
+    if (ids.length > 50) {
+      throw new Error('nodes query supports up to 50 ids per request')
+    }
+    return Promise.all(ids.map((id) => this.node(id)))
+  }
 }
 
 function mapProductLike(p: Record<string, unknown>): Record<string, unknown> {
@@ -647,6 +914,16 @@ function mapProductLike(p: Record<string, unknown>): Record<string, unknown> {
 @Resolver('StorePage')
 export class StoreContentResolver {
   constructor(private readonly service: StoreContentService) {}
+  @Query()
+  node(@Args('id') id: string) {
+    return this.service.node(id)
+  }
+
+  @Query()
+  nodes(@Args('ids', { type: () => [String] }) ids: string[]) {
+    return this.service.nodes(ids)
+  }
+
 
   @Query()
   pages() {
@@ -983,8 +1260,16 @@ export class StoreContentResolver {
   }
 }
 
+@Resolver('Node')
+export class NodeResolver {
+  @ResolveField()
+  __resolveType(value: { __typename?: string } | null | undefined): string | null {
+    return value?.__typename ?? null
+  }
+}
+
 @Module({
   imports: [PrismaModule, AuthModule],
-  providers: [StoreContentResolver, StoreContentService],
+  providers: [StoreContentResolver, StoreContentService, NodeResolver],
 })
 export class StoreContentModule {}

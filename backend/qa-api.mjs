@@ -266,8 +266,12 @@ console.log('═══ 6. MUTATIONS: discounts/giftcards/content/metafields ═�
   check('giftCardCreate', g.giftCard?.balance === 25)
   const adj = await mut('giftCardBalanceAdjust', `giftCardBalanceAdjust(id: "${gid}", newBalance: 15, note: "QA") { giftCard { balance } }`)
   check('giftCardBalanceAdjust', adj.giftCard.balance === 15)
+  const gcNotif = await mut('giftCardSendNotification', `giftCardSendNotification(id: "${gid}") { giftCard { id history { type amount note } } userErrors { message } }`)
+  const notifEvent = gcNotif.giftCard?.history?.find((h) => h.type === 'notification_sent')
+  check('giftCardSendNotification records notification event with valid amount', notifEvent && notifEvent.amount === 0)
   await mut('giftCardDisable', `giftCardDisable(id: "${gid}") { giftCard { status } }`)
-
+  const disNotif = await mut('giftCardSendNotification', `giftCardSendNotification(id: "${gid}") { giftCard { id } userErrors { message } }`)
+  check('giftCardSendNotification rejects disabled gift card', disNotif.userErrors?.length > 0)
   const pg = await mut('pageCreate', `pageCreate(page: { title: "QA Page", contentHtml: "<p>qa</p>" }) { page { id handle } userErrors { message } }`)
   check('pageCreate', !!pg.page?.id)
   await mut('pageDelete', `pageDelete(ids: ["${pg.page.id}"]) { updatedIds }`)
@@ -353,6 +357,54 @@ console.log('═══ 9. ERROR HANDLING ═══')
   check('missing order mutation → userError', nf.userErrors?.length > 0)
   const gqlErr = await fetch(URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"query":"{ nosuchfield }"}' }).then((r) => r.json())
   check('invalid field → GraphQL error', gqlErr.errors?.length > 0)
+}
+
+console.log('═══ 10. RELAY & GRAPHQL PARITY FEATURES ═══')
+{
+  // 1. PageInfo cursors & backward pagination
+  const p1 = await GQL(`{ products(first: 3) { pageInfo { startCursor endCursor hasNextPage hasPreviousPage } edges { cursor node { id } } } }`)
+  check('pageInfo has startCursor and endCursor', !!p1.products?.pageInfo?.startCursor && !!p1.products?.pageInfo?.endCursor)
+  const lastCursor = p1.products?.pageInfo?.endCursor
+  const pBack = await GQL(`{ products(last: 2, before: "${lastCursor}") { pageInfo { hasNextPage hasPreviousPage } edges { node { id } } } }`)
+  check('backward pagination with last/before', (pBack.products?.edges?.length ?? 0) > 0)
+
+  // 2. Node & nodes queries with GID
+  const nodeProduct = await GQL(`{ node(id: "gid://shopify/Product/${testProductId}") { id ... on Product { title } } }`)
+  check('node query by GID resolves Product', nodeProduct.node?.id === testProductId && !!nodeProduct.node?.title)
+
+  const nodeMiss = await GQL(`{ node(id: "gid://shopify/Order/${testProductId}") { id } }`)
+  check('typed GID miss returns null', nodeMiss.node === null)
+
+  const nodesRes = await GQL(`{ nodes(ids: ["${testProductId}", "gid://shopify/Product/${testProductId}"]) { id } }`)
+  check('nodes bulk query returns array', Array.isArray(nodesRes.nodes) && nodesRes.nodes.length === 2)
+
+  // 3. Variant CRUD mutations & options sync
+  const varCreate = await mut('productVariantCreate', `productVariantCreate(input: { productId: "${testProductId}", title: "QA Variant", price: 19.99, inventoryQuantity: 10, optionValues: { "Fit": "Relaxed" } }) { productVariant { id title price } userErrors { message } }`)
+  const createdVarId = varCreate.productVariant?.id
+  check('productVariantCreate succeeds', !!createdVarId)
+
+  const prodWithOptions = await GQL(`{ product(id: "${testProductId}") { options { name values } } }`)
+  const hasFitOpt = prodWithOptions.product?.options?.some((o) => o.name === 'Fit' && o.values.includes('Relaxed'))
+  check('productVariantCreate synced product.options', !!hasFitOpt)
+
+  const varUpdate = await mut('productVariantUpdate', `productVariantUpdate(id: "${createdVarId}", input: { price: 24.99, inventoryQuantity: 30 }) { productVariant { price } userErrors { message } }`)
+  check('productVariantUpdate updates price', varUpdate.productVariant?.price === 24.99)
+
+  const varDelete = await mut('productVariantDelete', `productVariantDelete(id: "${createdVarId}") { deletedProductVariantId userErrors { message } }`)
+  check('productVariantDelete succeeds', varDelete.deletedProductVariantId === createdVarId)
+
+  // 4. draftOrderCalculate
+  const customerList = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
+  const testCustomerId = customerList.customers?.edges?.[0]?.node?.id
+  const productList = await GQL(`{ products(first: 1) { edges { node { variants { id } } } } }`)
+  const calcVarId = productList.products?.edges?.[0]?.node?.variants?.[0]?.id
+  if (testCustomerId && calcVarId) {
+    const draftCalc = await mut('draftOrderCalculate', `draftOrderCalculate(input: { customerId: "${testCustomerId}", items: [{ variantId: "${calcVarId}", quantity: 2 }], shippingPrice: 5, discountAmount: 2 }) { calculatedDraftOrder { total subtotal taxTotal shippingPrice totalDiscount } userErrors { message } }`)
+    check('draftOrderCalculate computes totals without writing order', typeof draftCalc.calculatedDraftOrder?.total === 'number' && draftCalc.calculatedDraftOrder?.total > 0)
+  }
+  // 5. Variant node resolution
+  const nodeVariant = await GQL(`{ node(id: "gid://shopify/ProductVariant/${calcVarId}") { id ... on ProductVariant { title } } }`)
+  check('node query by GID resolves ProductVariant', nodeVariant.node?.id === calcVarId)
 }
 
 console.log('\n════════════════════════════════════')

@@ -2,24 +2,28 @@
 
 type Query {
   shop: Shop!
+  # Relay Global Object Identification
+  node(id: ID!): Node
+  nodes(ids: [ID!]!): [Node]!
+
 
   # Products & collections
   product(id: ID!): Product
-  products(first: Int = 25, after: String, query: String, reverse: Boolean, status: String): ProductConnection!
+  products(first: Int = 25, after: String, last: Int, before: String, query: String, reverse: Boolean, status: String): ProductConnection!
   collection(id: ID!): Collection
-  collections(first: Int = 25, after: String, query: String): CollectionConnection!
+  collections(first: Int = 25, after: String, last: Int, before: String, query: String): CollectionConnection!
 
   # Orders
   order(id: ID!): Order
-  orders(first: Int = 25, after: String, query: String, reverse: Boolean, status: String, paymentStatus: String, fulfillmentStatus: String): OrderConnection!
-  draftOrders(first: Int = 25, after: String, query: String): OrderConnection!
+  orders(first: Int = 25, after: String, last: Int, before: String, query: String, reverse: Boolean, status: String, paymentStatus: String, fulfillmentStatus: String): OrderConnection!
+  draftOrders(first: Int = 25, after: String, last: Int, before: String, query: String): OrderConnection!
   abandonedCheckouts(first: Int = 25): [AbandonedCheckout!]!
   returnsForOrder(orderId: ID!): [ReturnRecord!]!
 
   # Customers & B2B
   customer(id: ID!): Customer
-  customers(first: Int = 25, after: String, query: String): CustomerConnection!
-  companies(first: Int = 25, after: String, query: String): CompanyConnection!
+  customers(first: Int = 25, after: String, last: Int, before: String, query: String): CustomerConnection!
+  companies(first: Int = 25, after: String, last: Int, before: String, query: String): CompanyConnection!
   company(id: ID!): Company
   segment(id: ID!): Segment
   segments(first: Int = 25): [Segment!]!
@@ -34,7 +38,7 @@ type Query {
 
   # Discounts & marketing
   discount(id: ID!): Discount
-  discounts(first: Int = 25, after: String, query: String): DiscountConnection!
+  discounts(first: Int = 25, after: String, last: Int, before: String, query: String): DiscountConnection!
   campaigns: [Campaign!]!
 
   # Finances
@@ -43,7 +47,7 @@ type Query {
 
   # Gift cards
   giftCard(id: ID!): GiftCard
-  giftCards(first: Int = 25, after: String, query: String): GiftCardConnection!
+  giftCards(first: Int = 25, after: String, last: Int, before: String, query: String): GiftCardConnection!
 
   # Content & online store
   page(id: ID!): StorePage
@@ -131,6 +135,9 @@ type Mutation {
   productAddTags(ids: [ID!]!, tags: [String!]!): TagsPayload!
   productRemoveTags(ids: [ID!]!, tags: [String!]!): TagsPayload!
   productMediaReorder(id: ID!, mediaIds: [ID!]!): ProductPayload!
+  productVariantCreate(input: ProductVariantInput!): ProductVariantPayload!
+  productVariantUpdate(id: ID!, input: ProductVariantInput!): ProductVariantPayload!
+  productVariantDelete(id: ID!): ProductVariantDeletePayload!
 
   # Collections
   collectionCreate(collection: CollectionInput!): CollectionPayload!
@@ -176,6 +183,7 @@ type Mutation {
   draftOrderDelete(ids: [ID!]!): OrdersPayload!
   draftOrderConvert(id: ID!): OrderPayload!
   draftOrderInvoiceSend(id: ID!): OrderPayload!
+  draftOrderCalculate(input: DraftOrderCalculateInput!): DraftOrderCalculatePayload!
 
   # Returns
   returnCreate(orderId: ID!, lines: [ReturnLineInput!]!, reason: String!, restock: Boolean, refundAmount: Float): ReturnPayload!
@@ -209,6 +217,7 @@ type Mutation {
   giftCardDisable(id: ID!): GiftCardPayload!
   giftCardEnable(id: ID!): GiftCardPayload!
   giftCardBalanceAdjust(id: ID!, newBalance: Float!, note: String): GiftCardPayload!
+  giftCardSendNotification(id: ID!): GiftCardPayload!
 
   # Content
   pageCreate(page: PageInput!): PagePayload!

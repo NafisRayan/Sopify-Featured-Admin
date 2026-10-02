@@ -13,7 +13,7 @@ type DiscountCombinations {
   shippingDiscounts: Boolean!
 }
 
-type Discount {
+type Discount implements Node {
   id: ID!
   code: String!
   title: String!
@@ -87,7 +87,7 @@ type DiscountDeletePayload {
 
 # ─── Marketing ──────────────────────────────────────────────────────────────
 
-type Campaign {
+type Campaign implements Node {
   id: ID!
   name: String!
   channel: String!
@@ -123,7 +123,7 @@ type GiftCardHistory {
   note: String
 }
 
-type GiftCard {
+type GiftCard implements Node {
   id: ID!
   code: String!
   customerId: ID
@@ -186,7 +186,7 @@ type BalanceTransaction {
 
 # ─── Customers extra: segments live here for schema clarity ─────────────────
 
-type MetafieldDefinition {
+type MetafieldDefinition implements Node {
   id: ID!
   namespace: String!
   key: String!
@@ -196,7 +196,7 @@ type MetafieldDefinition {
   resourceType: String!
 }
 
-type Metafield {
+type Metafield implements Node {
   id: ID!
   ownerType: String!
   ownerId: ID!

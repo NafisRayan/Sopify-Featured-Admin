@@ -161,6 +161,16 @@ export class OrdersResolver {
   }
 
   @Mutation()
+  async draftOrderCalculate(@Args('input') input: Record<string, unknown>) {
+    try {
+      return { calculatedDraftOrder: await this.service.calculateDraft(input), userErrors: [] }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      return { calculatedDraftOrder: null, userErrors: [{ field: ['input'], message }] }
+    }
+  }
+
+  @Mutation()
   async abandonedCheckoutRecoverySend(@Args('id') id: string) {
     try {
       return { checkout: await this.service.sendRecoveryEmail(id), userErrors: [] }
