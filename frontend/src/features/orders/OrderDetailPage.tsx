@@ -363,6 +363,27 @@ export default function OrderDetailPage() {
                   <dt>Total</dt>
                   <dd>{formatMoney(order.total)} {order.currency}</dd>
                 </div>
+                {(order.giftCardApplied ?? 0) > 0 && order.giftCardCode && (
+                  <div className="flex justify-between text-critical-strong">
+                    <dt>Gift card ({order.giftCardCode})</dt>
+                    <dd>-{formatMoney(order.giftCardApplied ?? 0)}</dd>
+                  </div>
+                )}
+                {(order.transactions?.length ?? 0) > 0 && (
+                  <div className="mt-3 border-t border-border pt-2">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-subdued">Transactions</p>
+                    <ul className="space-y-1 text-xs text-text-muted">
+                      {order.transactions!.map((t) => (
+                        <li key={t.id} className="flex justify-between">
+                          <span>{t.kind === 'GIFT_CARD' ? 'Gift card' : t.kind === 'SALE' ? 'Sale' : 'Refund'} · {t.gateway}</span>
+                          <span className={t.amount < 0 ? 'text-critical-strong' : ''}>
+                            {t.amount < 0 ? '' : '+'}{formatMoney(t.amount)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {alreadyRefunded > 0 && (
                   <div className="flex justify-between text-critical-strong">
                     <dt>Refunded</dt>

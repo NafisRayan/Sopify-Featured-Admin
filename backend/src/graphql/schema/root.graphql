@@ -178,8 +178,8 @@ type Mutation {
   orderEdit(id: ID!, added: [OrderLineItemInput!]!, removed: [OrderLineItemInput!]!): OrderEditPayload!
 
   # Draft orders
-  draftOrderCreate(customerId: ID!, items: [OrderLineItemInput!]!, note: String, tags: [String!], shippingPrice: Float, discountAmount: Float, discountCode: String): OrderPayload!
-  draftOrderUpdate(id: ID!, customerId: ID!, items: [OrderLineItemInput!]!, note: String, tags: [String!], shippingPrice: Float, discountAmount: Float, discountCode: String): OrderPayload!
+  draftOrderCreate(customerId: ID!, items: [OrderLineItemInput!]!, note: String, tags: [String!], shippingPrice: Float, discountAmount: Float, discountCode: String, giftCardCode: String): OrderPayload!
+  draftOrderUpdate(id: ID!, customerId: ID!, items: [OrderLineItemInput!]!, note: String, tags: [String!], shippingPrice: Float, discountAmount: Float, discountCode: String, giftCardCode: String): OrderPayload!
   draftOrderDelete(ids: [ID!]!): OrdersPayload!
   draftOrderConvert(id: ID!): OrderPayload!
   draftOrderInvoiceSend(id: ID!): OrderPayload!

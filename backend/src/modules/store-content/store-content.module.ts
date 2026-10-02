@@ -26,6 +26,8 @@ import { AuthorizationService } from '../../auth/authorization.service'
 import { AuthModule } from '../../auth/auth.module'
 import { currentStaff } from '../../auth/staff-context'
 
+import { OrdersService } from '../orders/orders.service'
+import { OrdersModule } from '../orders/orders.module'
 // Consolidated store/content/metafields/staff/system module.
 // Pages, blog posts, files, menus, redirects, metaobjects, metafields,
 // staff, activity, notifications, tasks, apps, settings, theme, locales,
@@ -36,6 +38,7 @@ export class StoreContentService {
   constructor(
     private prisma: PrismaService,
     private authz: AuthorizationService,
+    private ordersService?: OrdersService,
   ) {}
 
   private async logActivity(action: string, resource: string, resourceId?: string) {
@@ -494,23 +497,9 @@ export class StoreContentService {
         totalInventory: p.trackQuantity ? variants.reduce((s, v) => s + (levels.find((l) => l.variantId === v.id)?.available ?? 0), 0) : 0,
       })
     }
-    const riskRows = await this.prisma.orderRisk.findMany()
-    const decoratedOrders = (orders as Record<string, unknown>[]).map((o) => {
-      const risk = riskRows.find((r) => r.orderId === o.id)
-      return {
-        ...o,
-        lineItems: parseJson(o.lineItems as string, []),
-        shippingAddress: parseJson(o.shippingAddress as string, {}),
-        billingAddress: parseJson(o.billingAddress as string, {}),
-        discountCode: parseJson(o.discountCode as string, null),
-        tags: parseJson(o.tags as string, []),
-        timeline: parseJson(o.timeline as string, []),
-        fulfillments: parseJson(o.fulfillments as string, []),
-        refunds: parseJson(o.refunds as string, []),
-        riskLevel: risk?.level ?? null,
-        riskSignals: parseJson<string[]>(risk?.signals as string, []),
-      }
-    })
+    const decoratedOrders = this.ordersService
+      ? await this.ordersService.decorateOrders(orders as Record<string, unknown>[])
+      : (orders as Record<string, unknown>[]).map((o) => mapOrder(o))
     const customerOrders = await this.prisma.order.findMany({ where: { status: { notIn: ['draft', 'cancelled'] } }, select: { customerId: true, total: true, createdAt: true } })
     // evaluate segment membership server-side
     const segmentRows = await this.prisma.segment.findMany()
@@ -601,24 +590,8 @@ export class StoreContentService {
 
   // helpers reused by snapshot
   async orders(): Promise<any[]> {
-    const rows = await this.prisma.order.findMany({ orderBy: { createdAt: 'desc' } })
-    const riskRows = await this.prisma.orderRisk.findMany()
-    return rows.map((o) => {
-      const risk = riskRows.find((r) => r.orderId === o.id)
-      return {
-        ...o,
-        lineItems: parseJson(o.lineItems as string, []),
-        shippingAddress: parseJson(o.shippingAddress as string, {}),
-        billingAddress: parseJson(o.billingAddress as string, {}),
-        discountCode: parseJson(o.discountCode as string, null),
-        tags: parseJson(o.tags as string, []),
-        timeline: parseJson(o.timeline as string, []),
-        fulfillments: parseJson(o.fulfillments as string, []),
-        refunds: parseJson(o.refunds as string, []),
-        riskLevel: risk?.level ?? null,
-        riskSignals: parseJson<string[]>(risk?.signals as string, []),
-      }
-    })
+    const rows = (await this.prisma.order.findMany({ orderBy: { createdAt: 'desc' } })) as unknown as Record<string, unknown>[]
+    return this.ordersService ? this.ordersService.decorateOrders(rows) : rows.map((o) => mapOrder(o))
   }
   async collections(): Promise<any[]> {
     const rows = await this.prisma.collection.findMany({ orderBy: { title: 'asc' } })
@@ -1269,7 +1242,7 @@ export class NodeResolver {
 }
 
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, OrdersModule],
   providers: [StoreContentResolver, StoreContentService, NodeResolver],
 })
 export class StoreContentModule {}

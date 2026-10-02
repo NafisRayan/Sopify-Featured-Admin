@@ -155,9 +155,15 @@ export async function markAsPaid(orderId: string): Promise<void> {
   await delay(300)
   const order = getStore().orders.find((o) => o.id === orderId)
   if (!order) throw new Error('Order not found')
+  if (order.isDraft) throw new Error('Cannot mark a draft order as paid; convert it first')
+  if (order.status === 'cancelled') throw new Error('Cannot mark a cancelled order as paid')
+  if (['paid', 'partially_refunded', 'refunded'].includes(order.paymentStatus)) {
+    throw new Error('Order payment has already been captured or refunded')
+  }
+  const outstanding = roundMoney(Math.max(0, order.total - (order.giftCardApplied ?? 0)))
   getStore().patchOrder(orderId, { paymentStatus: 'paid' })
   syncMutation(`mutation { orderMarkAsPaid(id: ${gqlLiteral(orderId)}) { userErrors { message } } }`)
-  addTimeline(orderId, 'payment', `Payment of $${order.total.toFixed(2)} marked as received`)
+  addTimeline(orderId, 'payment', `Payment of $${outstanding.toFixed(2)} marked as received`)
 }
 
 // ─── Refunds ───────────────────────────────────────────────────────────────
@@ -264,6 +270,19 @@ export async function cancelOrder(orderId: string, restock = true): Promise<void
       restock,
     })
   }
+  if (order.giftCardCode && (order.giftCardApplied ?? 0) > 0) {
+    const card = store.giftCards.find((g) => g.code === order.giftCardCode)
+    if (card) {
+      store.upsertGiftCard({
+        ...card,
+        balance: roundMoney(card.balance + order.giftCardApplied!),
+        history: [
+          ...card.history,
+          { id: uid('gch'), at: new Date().toISOString(), type: 'adjusted', amount: order.giftCardApplied!, note: `Restored from cancelled order ${order.name}` },
+        ],
+      })
+    }
+  }
 
   store.patchOrder(orderId, {
     status: 'cancelled',
@@ -333,6 +352,7 @@ export interface DraftInput {
   shippingPrice?: number
   discountAmount?: number
   discountCode?: string
+  giftCardCode?: string
 }
 
 function buildDraft(input: DraftInput): Order {
@@ -364,6 +384,7 @@ function buildDraft(input: DraftInput): Order {
   const subtotal = roundMoney(lineItems.reduce((s, li) => s + li.price * li.quantity, 0))
   const shippingPrice = input.shippingPrice ?? 6.99
   if (shippingPrice < 0) throw new Error('Shipping price cannot be negative')
+  let shippingIsFree = false
   let discountAmount = input.discountAmount ?? 0
   if (discountAmount < 0) throw new Error('Discount amount cannot be negative')
   let discountCode: Order['discountCode']
@@ -376,8 +397,28 @@ function buildDraft(input: DraftInput): Order {
       discountAmount = roundMoney(subtotal * (pct / 100))
     } else if (disc.type === 'fixed_amount') {
       discountAmount = Math.min(subtotal, roundMoney(Math.max(0, disc.value ?? 0)))
-    } else if (disc.type === 'free_shipping' || disc.type === 'bxgy') {
-      throw new Error(`Discount code ${rawCode} is not supported on draft orders`)
+    } else if (disc.type === 'free_shipping') {
+      shippingIsFree = true
+    } else if (disc.type === 'bxgy') {
+      const cfg = disc.bxgy
+      const eligibleQty = lineItems
+        .filter((li) => disc.productEligibility !== 'specific' || disc.productIds.includes(li.productId))
+        .reduce((s, li) => s + li.quantity, 0)
+      const eligibleSubtotal = lineItems
+        .filter((li) => disc.productEligibility !== 'specific' || disc.productIds.includes(li.productId))
+        .reduce((s, li) => s + li.price * li.quantity, 0)
+      const buysQty = Math.max(1, cfg?.customerBuysQuantity ?? 1)
+      const qualifies = cfg?.customerBuysAmount ? eligibleSubtotal >= cfg.customerBuysAmount : eligibleQty >= buysQty
+      if (qualifies && eligibleQty > 0) {
+        const sets = cfg?.customerBuysAmount ? 1 : Math.floor(eligibleQty / buysQty)
+        const units = sets * Math.max(0, cfg?.customerGetsQuantity ?? 0)
+        if (units > 0) {
+          // Note: Shopify discounts the cheapest eligible units; this approximation uses average unit price.
+          const avgUnit = roundMoney(eligibleSubtotal / eligibleQty)
+          const pct = Math.min(100, Math.max(0, cfg?.customerGetsDiscountPercent ?? 0))
+          discountAmount = Math.min(eligibleSubtotal, roundMoney(units * avgUnit * (pct / 100)))
+        }
+      }
     } else {
       throw new Error(`Discount code ${rawCode} has an unsupported type`)
     }
@@ -386,14 +427,28 @@ function buildDraft(input: DraftInput): Order {
     if (discountAmount > subtotal + 0.01) throw new Error('Discount amount exceeds subtotal')
     discountCode = { code: 'CUSTOM', amount: roundMoney(discountAmount) }
   }
+  const effectiveShipping = shippingIsFree ? 0 : shippingPrice
   let taxTotal = 0
   if (!customer.taxExempt) {
     const rate = (store.settings.taxes?.taxRate ?? 8) / 100
-    const taxableBase = Math.max(0, subtotal - discountAmount) + (store.settings.taxes?.chargeTaxOnShipping ? shippingPrice : 0)
+    const taxableBase = Math.max(0, subtotal - discountAmount) + (store.settings.taxes?.chargeTaxOnShipping ? effectiveShipping : 0)
     taxTotal = roundMoney(taxableBase * rate)
   }
   const addr: Address | undefined = customer.defaultAddress
   const now = new Date().toISOString()
+  const total = roundMoney(Math.max(0, subtotal - discountAmount) + effectiveShipping + taxTotal)
+  let giftCardCode: string | null = null
+  let giftCardApplied = 0
+  const rawGift = input.giftCardCode?.trim().toUpperCase()
+  if (rawGift) {
+    const card = store.giftCards.find((g) => g.code.toUpperCase() === rawGift)
+    if (!card) throw new Error(`Gift card ${rawGift} not found`)
+    if (card.status === 'disabled') throw new Error(`Gift card ${rawGift} is disabled`)
+    if (card.expiresAt && new Date(card.expiresAt) < new Date()) throw new Error(`Gift card ${rawGift} has expired`)
+    giftCardApplied = roundMoney(Math.min(card.balance, Math.max(0, total)))
+    if (giftCardApplied <= 0) throw new Error(`Gift card ${rawGift} has no remaining balance`)
+    giftCardCode = card.code
+  }
   return {
     id: uid('o'),
     name: `#D${Math.floor(Math.random() * 900 + 100)}`,
@@ -407,12 +462,14 @@ function buildDraft(input: DraftInput): Order {
     lineItems,
     shippingAddress: addr!,
     billingAddress: addr!,
-    shippingTitle: shippingPrice === 0 ? 'Free shipping' : 'Standard shipping',
-    shippingPrice,
+    shippingTitle: effectiveShipping === 0 ? 'Free shipping' : 'Standard shipping',
+    shippingPrice: effectiveShipping,
     subtotal,
     taxTotal,
-    total: roundMoney(Math.max(0, subtotal - discountAmount) + shippingPrice + taxTotal),
+    total,
     discountCode,
+    giftCardCode,
+    giftCardApplied,
     currency: 'USD',
     tags: input.tags ?? [],
     note: input.note,
@@ -427,7 +484,7 @@ function buildDraft(input: DraftInput): Order {
 export async function createDraft(input: DraftInput): Promise<Order> {
   await delay(350)
   if (IS_REMOTE) {
-    const { entity } = await mutatePayload('draftOrderCreate', `draftOrderCreate(customerId: ${gqlLiteral(input.customerId)}, items: ${gqlLiteral(input.lineItems)}, note: ${gqlLiteral(input.note ?? null)}, tags: ${gqlLiteral(input.tags ?? [])}, shippingPrice: ${input.shippingPrice ?? 6.99}, discountAmount: ${input.discountAmount ?? 0}, discountCode: ${gqlLiteral(input.discountCode ?? null)}) { order { id name customerId email phone createdAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals } userErrors { field message } }`)
+    const { entity } = await mutatePayload('draftOrderCreate', `draftOrderCreate(customerId: ${gqlLiteral(input.customerId)}, items: ${gqlLiteral(input.lineItems)}, note: ${gqlLiteral(input.note ?? null)}, tags: ${gqlLiteral(input.tags ?? [])}, shippingPrice: ${input.shippingPrice ?? 6.99}, discountAmount: ${input.discountAmount ?? 0}, discountCode: ${gqlLiteral(input.discountCode ?? null)}, giftCardCode: ${gqlLiteral(input.giftCardCode ?? null)}) { order { id name customerId email phone createdAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice discountCode { code amount } giftCardCode giftCardApplied subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft } userErrors { field message } } }`)
     getStore().addOrder(entity as Order)
     return entity as Order
   }
@@ -453,8 +510,10 @@ export async function updateDraft(orderId: string, input: DraftInput): Promise<v
     discountCode: rebuilt.discountCode,
     note: rebuilt.note,
     tags: rebuilt.tags,
+    giftCardCode: rebuilt.giftCardCode,
+    giftCardApplied: rebuilt.giftCardApplied,
   })
-  syncMutation(`mutation { draftOrderUpdate(id: ${gqlLiteral(orderId)}, customerId: ${gqlLiteral(rebuilt.customerId)}, items: ${gqlLiteral(rebuilt.lineItems.map((li) => ({ variantId: li.variantId, quantity: li.quantity })))}, note: ${gqlLiteral(rebuilt.note ?? null)}, tags: ${gqlLiteral(rebuilt.tags ?? [])}, shippingPrice: ${rebuilt.shippingPrice}, discountAmount: ${rebuilt.discountCode?.amount ?? 0}, discountCode: ${gqlLiteral(rebuilt.discountCode?.code && rebuilt.discountCode.code !== "CUSTOM" ? rebuilt.discountCode.code : null)}) { order { id } userErrors { message } } }`)
+  syncMutation(`mutation { draftOrderUpdate(id: ${gqlLiteral(orderId)}, customerId: ${gqlLiteral(rebuilt.customerId)}, items: ${gqlLiteral(rebuilt.lineItems.map((li) => ({ variantId: li.variantId, quantity: li.quantity })))}, note: ${gqlLiteral(rebuilt.note ?? null)}, tags: ${gqlLiteral(rebuilt.tags ?? [])}, shippingPrice: ${rebuilt.shippingPrice}, discountAmount: ${rebuilt.discountCode?.amount ?? 0}, discountCode: ${gqlLiteral(rebuilt.discountCode?.code && rebuilt.discountCode.code !== "CUSTOM" ? rebuilt.discountCode.code : null)}, giftCardCode: ${gqlLiteral(rebuilt.giftCardCode ?? null)}) { order { id } userErrors { message } } }`)
 }
 
 /** Mark a draft as a real order: moves it into the live order flow */
@@ -463,6 +522,18 @@ export async function convertDraft(orderId: string): Promise<string> {
   const store = getStore()
   const draft = store.orders.find((o) => o.id === orderId)
   if (!draft || !draft.isDraft) throw new Error('Draft not found')
+
+  // Pre-checks: validate gift card BEFORE any stock is reserved
+  let validatedCard: (typeof store.giftCards)[number] | null = null
+  let appliedGift = 0
+  if (draft.giftCardCode && (draft.giftCardApplied ?? 0) > 0) {
+    const card = store.giftCards.find((g) => g.code === draft.giftCardCode)
+    if (!card) throw new Error(`Gift card ${draft.giftCardCode} not found`)
+    if (card.status === 'disabled') throw new Error(`Gift card ${draft.giftCardCode} is disabled`)
+    appliedGift = roundMoney(Math.min(draft.giftCardApplied ?? 0, card.balance))
+    if (appliedGift <= 0) throw new Error(`Gift card ${draft.giftCardCode} has no remaining balance`)
+    validatedCard = card
+  }
 
   const needed = new Map<string, number>()
   for (const li of draft.lineItems) {
@@ -492,13 +563,28 @@ export async function convertDraft(orderId: string): Promise<string> {
       remaining -= take
     }
   }
+  // Redeem the applied gift card (mirrors backend convertDraft)
+  let bornPaid = false
+  if (validatedCard && appliedGift > 0) {
+    store.upsertGiftCard({
+      ...validatedCard,
+      balance: roundMoney(validatedCard.balance - appliedGift),
+      history: [
+        ...validatedCard.history,
+        { id: uid('gch'), at: new Date().toISOString(), type: 'redeemed', amount: -appliedGift, note: `Applied to order ${draft.name}` },
+      ],
+    })
+    bornPaid = appliedGift >= draft.total - 0.01
+  }
 
   const name = `#${nextOrderNumber()}`
   store.patchOrder(orderId, {
     name,
     status: 'open',
     isDraft: false,
-    paymentStatus: 'pending',
+    paymentStatus: bornPaid ? 'paid' : 'pending',
+    giftCardApplied: appliedGift,
+    giftCardCode: appliedGift > 0 ? validatedCard!.code : null,
     createdAt: new Date().toISOString(),
     timeline: [
       ...draft.timeline,

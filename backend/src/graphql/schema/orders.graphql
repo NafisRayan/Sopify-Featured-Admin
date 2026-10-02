@@ -71,6 +71,9 @@ type Order implements Node {
   fulfillments: [Fulfillment!]!
   refunds: [Refund!]!
   paymentGateway: String!
+  giftCardCode: String
+  giftCardApplied: Float!
+  transactions: [OrderTransaction!]!
   isDraft: Boolean!
   # parity: fraud analysis
   riskLevel: String
@@ -117,6 +120,16 @@ input OrderInput {
 type OrderPayload {
   order: Order
   userErrors: [UserError!]!
+}
+type OrderTransaction {
+  id: ID!
+  createdAt: DateTime!
+  kind: String!   # SALE | REFUND | GIFT_CARD
+  amount: Float!
+  fee: Float!
+  net: Float!
+  gateway: String!
+  description: String!
 }
 
 type OrdersPayload {
@@ -172,7 +185,6 @@ type OrderEditPayload {
   order: Order
   userErrors: [UserError!]!
 }
-
 input DraftOrderCalculateInput {
   customerId: ID!
   items: [OrderLineItemInput!]!
@@ -181,6 +193,7 @@ input DraftOrderCalculateInput {
   shippingPrice: Float
   discountAmount: Float
   discountCode: String
+  giftCardCode: String
 }
 
 type CalculatedDraftOrder {
@@ -194,6 +207,8 @@ type CalculatedDraftOrder {
   shippingAddress: Address
   billingAddress: Address
   discountCode: DiscountCodeRef
+  giftCardCode: String
+  giftCardApplied: Float!
 }
 
 type DraftOrderCalculatePayload {

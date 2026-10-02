@@ -1,9 +1,11 @@
-import 'reflect-metadata'
+import express from 'express'
 import { NestFactory, HttpAdapterHost } from '@nestjs/core'
 import { NestExpressApplication } from '@nestjs/platform-express'
 import { join } from 'node:path'
 import { Logger, ValidationPipe } from '@nestjs/common'
 import { AppModule } from './app.module'
+import { AuthMiddleware } from './auth/auth.middleware'
+import { SessionService } from './auth/session.service'
 import { assertAuthConfig } from './auth/auth.config'
 import { AllExceptionsFilter } from './common/all-exceptions.filter'
 
@@ -25,6 +27,8 @@ async function bootstrap(): Promise<void> {
     },
     credentials: true,
   })
+  const authMiddleware = new AuthMiddleware(app.get(SessionService))
+  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => authMiddleware.use(req, res, next))
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }))
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost)))
   app.enableShutdownHooks()

@@ -51,6 +51,7 @@ export function mapCustomer(c: Row, stats?: { ordersCount: number; totalSpent: n
 }
 
 export function mapOrder(o: Row, risk?: { level: string; signals: string[] } | null): Row {
+  const gc = parseJson<{ code?: string; amount?: number } | null>(o.giftCard as string, null)
   return {
     ...o,
     lineItems: parseJson<unknown[]>(o.lineItems as string, []),
@@ -61,6 +62,10 @@ export function mapOrder(o: Row, risk?: { level: string; signals: string[] } | n
     timeline: parseJson<unknown[]>(o.timeline as string, []),
     fulfillments: parseJson<unknown[]>(o.fulfillments as string, []),
     refunds: parseJson<unknown[]>(o.refunds as string, []),
+    giftCard: gc,
+    giftCardCode: gc?.code ?? null,
+    giftCardApplied: gc?.amount ?? 0,
+    transactions: [],
     riskLevel: risk?.level ?? null,
     riskSignals: risk?.signals ?? [],
   }

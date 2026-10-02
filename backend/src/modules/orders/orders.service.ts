@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
-import { parseJson, toJson, toConnection, filterByQuery } from '../../common/helpers'
+import { Discount as DiscountRow, GiftCard as GiftCardRow } from '@prisma/client'
 import { mapOrder, mapReturn, mapOrderRisk, mapCustomer } from '../../common/mappers'
 import { uid, roundMoney } from '../../common/ids'
+import { parseJson, toJson, toConnection, filterByQuery } from '../../common/helpers'
 import { actorId, actorName } from '../../auth/actor'
 
 @Injectable()
@@ -38,7 +39,34 @@ export class OrdersService {
   async decorateOrders(rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
     const risks = await this.prisma.orderRisk.findMany()
     const riskMap = new Map(risks.map((r) => [r.orderId, r]))
-    return rows.map((o) => mapOrder(o, mapOrderRisk(riskMap.get(o.id as string))))
+    const orderIds = rows.map((o) => o.id as string)
+    const txns = orderIds.length
+      ? await this.prisma.balanceTransaction.findMany({
+          where: { orderId: { in: orderIds } },
+          orderBy: { at: 'asc' },
+        })
+      : []
+    const txnMap = new Map<string, typeof txns>()
+    for (const t of txns) {
+      const list = txnMap.get(t.orderId ?? '') ?? []
+      list.push(t)
+      txnMap.set(t.orderId ?? '', list)
+    }
+    return rows.map((o) => {
+      const gateway = (o.paymentGateway as string) ?? 'manual'
+      const mapped = mapOrder(o, mapOrderRisk(riskMap.get(o.id as string)))
+      mapped.transactions = (txnMap.get(o.id as string) ?? []).map((t) => ({
+        id: t.id,
+        createdAt: t.at,
+        kind: t.type === 'charge' ? 'SALE' : t.type === 'gift_card' ? 'GIFT_CARD' : 'REFUND',
+        amount: t.amount,
+        fee: t.fee,
+        net: t.net,
+        gateway: t.type === 'gift_card' ? 'Gift card' : gateway,
+        description: t.description,
+      }))
+      return mapped
+    })
   }
 
   async order(id: string): Promise<any> {
@@ -285,22 +313,27 @@ export class OrdersService {
     }
     const priorRefunds = parseJson<{ amount: number }[]>(order.refunds as string, [])
     if (priorRefunds.length > 0) throw new Error('Cannot mark as paid after refunds have been issued')
+    // Only the outstanding balance is captured — an applied gift card was already tendered at convert.
+    const giftApplied = parseJson<{ amount?: number } | null>(order.giftCard as string, null)?.amount ?? 0
+    const outstanding = roundMoney(Math.max(0, order.total - giftApplied))
     await this.prisma.order.update({ where: { id }, data: { paymentStatus: 'paid' } })
-    const fee = roundMoney(order.total * 0.029 + 0.3)
-    await this.prisma.balanceTransaction.create({
-      data: {
-        id: uid('txn'),
-        type: 'charge',
-        amount: order.total,
-        fee,
-        net: roundMoney(order.total - fee),
-        orderId: order.id,
-        description: `Payment for ${order.name}`,
-        payoutId: null,
-        at: new Date(),
-      },
-    })
-    await this.addTimeline(id, 'payment', `Payment of $${order.total.toFixed(2)} captured via ${order.paymentGateway}`)
+    if (outstanding > 0) {
+      const fee = roundMoney(outstanding * 0.029 + 0.3)
+      await this.prisma.balanceTransaction.create({
+        data: {
+          id: uid('txn'),
+          type: 'charge',
+          amount: outstanding,
+          fee,
+          net: roundMoney(outstanding - fee),
+          orderId: order.id,
+          description: `Payment for ${order.name}`,
+          payoutId: null,
+          at: new Date(),
+        },
+      })
+    }
+    await this.addTimeline(id, 'payment', `Payment of $${outstanding.toFixed(2)} captured via ${order.paymentGateway}`)
     await this.logActivity('Marked order as paid', 'order', id)
     return this.order(id)
   }
@@ -329,19 +362,54 @@ export class OrdersService {
         lineItemIds: lineItems.map((li) => li.id),
         restock,
       })
-      await this.prisma.balanceTransaction.create({
-        data: {
-          id: uid('txn'),
-          type: 'refund',
-          amount: -remainingToRefund,
-          fee: 0,
-          net: -remainingToRefund,
-          orderId: order.id,
-          description: `Cancel refund for ${order.name}`,
-          payoutId: null,
-          at: new Date(),
-        },
-      })
+      const giftRef = parseJson<{ code?: string; amount?: number } | null>(order.giftCard as string, null)
+      const giftApplied = giftRef?.amount ?? 0
+      if (giftRef?.code && giftApplied > 0) {
+        const card = await this.prisma.giftCard.findUnique({ where: { code: giftRef.code } })
+        if (card) {
+          const history = parseJson<unknown[]>(card.history as string, [])
+          history.push({
+            id: uid('gch'),
+            at: new Date().toISOString(),
+            type: 'adjusted',
+            amount: giftApplied,
+            note: `Restored from cancelled order ${order.name}`,
+          })
+          await this.prisma.giftCard.update({
+            where: { code: card.code },
+            data: { balance: roundMoney(card.balance + giftApplied), history: toJson(history) },
+          })
+          await this.prisma.balanceTransaction.create({
+            data: {
+              id: uid('txn'),
+              type: 'gift_card',
+              amount: giftApplied,
+              fee: 0,
+              net: giftApplied,
+              orderId: order.id,
+              description: `Gift card ${card.code} restored from cancelled ${order.name}`,
+              payoutId: null,
+              at: new Date(),
+            },
+          })
+        }
+      }
+      const gatewayRefund = roundMoney(Math.min(remainingToRefund, Math.max(0, order.total - giftApplied)))
+      if (gatewayRefund > 0) {
+        await this.prisma.balanceTransaction.create({
+          data: {
+            id: uid('txn'),
+            type: 'refund',
+            amount: -gatewayRefund,
+            fee: 0,
+            net: -gatewayRefund,
+            orderId: order.id,
+            description: `Cancel refund for ${order.name}`,
+            payoutId: null,
+            at: new Date(),
+          },
+        })
+      }
     }
     await this.prisma.order.update({
       where: { id },
@@ -512,19 +580,59 @@ export class OrdersService {
       data.closedAt = new Date()
     }
     await this.prisma.order.update({ where: { id: order.id }, data })
-    await this.prisma.balanceTransaction.create({
-      data: {
-        id: uid('txn'),
-        type: 'refund',
-        amount: -refundAmount,
-        fee: 0,
-        net: -refundAmount,
-        orderId: order.id,
-        description: `Refund for ${order.name}`,
-        payoutId: null,
-        at: new Date(),
-      },
-    })
+    const txns = await this.prisma.balanceTransaction.findMany({ where: { orderId: order.id } })
+    const totalGatewayCharged = txns.filter((t) => t.type === 'charge').reduce((s, t) => s + t.amount, 0)
+    const totalGatewayRefunded = txns.filter((t) => t.type === 'refund').reduce((s, t) => s + Math.abs(t.amount), 0)
+    const gatewayRefundable = roundMoney(Math.max(0, totalGatewayCharged - totalGatewayRefunded))
+    const gatewayRefundAmount = roundMoney(Math.min(refundAmount, gatewayRefundable))
+    const giftCardRestoreAmount = roundMoney(Math.max(0, refundAmount - gatewayRefundAmount))
+
+    if (gatewayRefundAmount > 0) {
+      await this.prisma.balanceTransaction.create({
+        data: {
+          id: uid('txn'),
+          type: 'refund',
+          amount: -gatewayRefundAmount,
+          fee: 0,
+          net: -gatewayRefundAmount,
+          orderId: order.id,
+          description: `Refund for ${order.name}`,
+          payoutId: null,
+          at: new Date(),
+        },
+      })
+    }
+    const giftRef = parseJson<{ code?: string; amount?: number } | null>(order.giftCard as string, null)
+    if (giftRef?.code && giftCardRestoreAmount > 0) {
+      const card = await this.prisma.giftCard.findUnique({ where: { code: giftRef.code } })
+      if (card) {
+        const history = parseJson<unknown[]>(card.history as string, [])
+        history.push({
+          id: uid('gch'),
+          at: new Date().toISOString(),
+          type: 'adjusted',
+          amount: giftCardRestoreAmount,
+          note: `Restored from refund on ${order.name}`,
+        })
+        await this.prisma.giftCard.update({
+          where: { code: card.code },
+          data: { balance: roundMoney(card.balance + giftCardRestoreAmount), history: toJson(history) },
+        })
+        await this.prisma.balanceTransaction.create({
+          data: {
+            id: uid('txn'),
+            type: 'gift_card',
+            amount: giftCardRestoreAmount,
+            fee: 0,
+            net: giftCardRestoreAmount,
+            orderId: order.id,
+            description: `Gift card ${card.code} restored from refund on ${order.name}`,
+            payoutId: null,
+            at: new Date(),
+          },
+        })
+      }
+    }
     await this.addTimeline(
       order.id,
       'refund',
@@ -735,19 +843,59 @@ export class OrdersService {
       orderUpdate.refunds = toJson(refunds)
       orderUpdate.paymentStatus = paymentStatus
       if (refundedAll) orderUpdate.fulfillmentStatus = 'returned'
-      await this.prisma.balanceTransaction.create({
-        data: {
-          id: uid('txn'),
-          type: 'refund',
-          amount: -refundAmount,
-          fee: 0,
-          net: -refundAmount,
-          orderId: order.id,
-          description: `Return refund for ${order.name}`,
-          payoutId: null,
-          at: new Date(),
-        },
-      })
+      const txns = await this.prisma.balanceTransaction.findMany({ where: { orderId: order.id } })
+      const totalGatewayCharged = txns.filter((t) => t.type === 'charge').reduce((s, t) => s + t.amount, 0)
+      const totalGatewayRefunded = txns.filter((t) => t.type === 'refund').reduce((s, t) => s + Math.abs(t.amount), 0)
+      const gatewayRefundable = roundMoney(Math.max(0, totalGatewayCharged - totalGatewayRefunded))
+      const gatewayRefundAmount = roundMoney(Math.min(refundAmount, gatewayRefundable))
+      const giftCardRestoreAmount = roundMoney(Math.max(0, refundAmount - gatewayRefundAmount))
+
+      if (gatewayRefundAmount > 0) {
+        await this.prisma.balanceTransaction.create({
+          data: {
+            id: uid('txn'),
+            type: 'refund',
+            amount: -gatewayRefundAmount,
+            fee: 0,
+            net: -gatewayRefundAmount,
+            orderId: order.id,
+            description: `Return refund for ${order.name}`,
+            payoutId: null,
+            at: new Date(),
+          },
+        })
+      }
+      const giftRef = parseJson<{ code?: string; amount?: number } | null>(order.giftCard as string, null)
+      if (giftRef?.code && giftCardRestoreAmount > 0) {
+        const card = await this.prisma.giftCard.findUnique({ where: { code: giftRef.code } })
+        if (card) {
+          const history = parseJson<unknown[]>(card.history as string, [])
+          history.push({
+            id: uid('gch'),
+            at: new Date().toISOString(),
+            type: 'adjusted',
+            amount: giftCardRestoreAmount,
+            note: `Restored from return on ${order.name}`,
+          })
+          await this.prisma.giftCard.update({
+            where: { code: card.code },
+            data: { balance: roundMoney(card.balance + giftCardRestoreAmount), history: toJson(history) },
+          })
+          await this.prisma.balanceTransaction.create({
+            data: {
+              id: uid('txn'),
+              type: 'gift_card',
+              amount: giftCardRestoreAmount,
+              fee: 0,
+              net: giftCardRestoreAmount,
+              orderId: order.id,
+              description: `Gift card ${card.code} restored from return on ${order.name}`,
+              payoutId: null,
+              at: new Date(),
+            },
+          })
+        }
+      }
     }
     await this.prisma.order.update({ where: { id: order.id }, data: orderUpdate })
 
@@ -867,20 +1015,14 @@ export class OrdersService {
 
     let discountAmount = input.discountAmount ?? 0
     let discountCodeObj: { code: string; amount: number } | null = null
+    let effectiveShipping = shippingPrice
     const rawCode = input.discountCode || (input.code ? String(input.code).trim().toUpperCase() : null)
-    if (rawCode && rawCode !== 'CUSTOM') {
-      const disc = await this.prisma.discount.findUnique({ where: { code: rawCode.toUpperCase() } })
-      if (!disc || disc.status !== 'active') throw new Error(`Discount code ${rawCode} is invalid or inactive`)
-      const now = new Date()
-      if (disc.startsAt && now < disc.startsAt) throw new Error(`Discount code ${rawCode} is not yet active`)
-      if (disc.endsAt && now > disc.endsAt) throw new Error(`Discount code ${rawCode} has expired`)
-      if (disc.usageLimit !== null && disc.usedCount >= disc.usageLimit) {
-        throw new Error(`Discount code ${rawCode} has reached its usage limit`)
-      }
-      if (disc.minPurchase !== null && subtotal < disc.minPurchase) {
-        throw new Error(`Minimum purchase of $${disc.minPurchase.toFixed(2)} required for discount ${rawCode}`)
-      }
-      this.assertDiscountEligible(disc, customer, lineItems as { productId: string }[])
+
+    /** Compute one discount's effect. Returns the order-level discount amount and
+     *  whether shipping becomes free (Shopify free_shipping / BXGY / code types). */
+    const applyDiscount = (
+      disc: DiscountRow,
+    ): { amount: number; freeShipping: boolean } => {
       const eligibleSubtotal = this.discountEligibleSubtotal(
         disc,
         lineItems as { productId: string; price: number; quantity: number }[],
@@ -888,26 +1030,105 @@ export class OrdersService {
       )
       if (disc.type === 'percentage') {
         const pct = Math.min(100, Math.max(0, disc.value ?? 0))
-        discountAmount = roundMoney(eligibleSubtotal * (pct / 100))
-      } else if (disc.type === 'fixed_amount') {
-        discountAmount = Math.min(eligibleSubtotal, roundMoney(Math.max(0, disc.value ?? 0)))
-      } else if (disc.type === 'free_shipping' || disc.type === 'bxgy') {
-        throw new Error(`Discount code ${rawCode} is not supported on draft orders`)
-      } else {
-        throw new Error(`Discount code ${rawCode} has an unsupported type`)
+        return { amount: roundMoney(eligibleSubtotal * (pct / 100)), freeShipping: false }
       }
+      if (disc.type === 'fixed_amount') {
+        return { amount: Math.min(eligibleSubtotal, roundMoney(Math.max(0, disc.value ?? 0))), freeShipping: false }
+      }
+      if (disc.type === 'free_shipping') {
+        return { amount: 0, freeShipping: true }
+      }
+      if (disc.type === 'bxgy') {
+        const cfg = parseJson<{
+          customerBuysQuantity?: number
+          customerBuysAmount?: number | null
+          customerGetsQuantity?: number
+          customerGetsDiscountPercent?: number
+        } | null>(disc.bxgy as string, null) ?? {}
+        const eligibleLines = (lineItems as { productId: string; price: number; quantity: number }[]).filter(
+          (li) => (disc.productEligibility ?? 'all') !== 'specific' || parseJson<string[]>(disc.productIds as string, []).includes(li.productId),
+        )
+        const eligibleQty = eligibleLines.reduce((s, li) => s + li.quantity, 0)
+        const buysQty = Math.max(1, cfg.customerBuysQuantity ?? 1)
+        const qualifies = cfg.customerBuysAmount
+          ? eligibleSubtotal >= cfg.customerBuysAmount
+          : eligibleQty >= buysQty
+        if (!qualifies || eligibleQty === 0) return { amount: 0, freeShipping: false }
+        const sets = cfg.customerBuysAmount ? 1 : Math.floor(eligibleQty / buysQty)
+        const discountUnits = sets * Math.max(0, cfg.customerGetsQuantity ?? 0)
+        if (discountUnits === 0) return { amount: 0, freeShipping: false }
+        // Note: Shopify discounts the cheapest eligible units; this approximation uses average unit price.
+        const avgUnit = roundMoney(eligibleSubtotal / eligibleQty)
+        const pct = Math.min(100, Math.max(0, cfg.customerGetsDiscountPercent ?? 0))
+        const raw = roundMoney(discountUnits * avgUnit * (pct / 100))
+        return { amount: Math.min(eligibleSubtotal, raw), freeShipping: false }
+      }
+      throw new Error(`Discount ${disc.code} has an unsupported type`)
+    }
+    const usableWindow = (disc: { startsAt: Date | null; endsAt: Date | null; usageLimit: number | null; usedCount: number; minPurchase: number | null; code: string }) => {
+      const now = new Date()
+      if (disc.startsAt && now < disc.startsAt) throw new Error(`Discount ${disc.code} is not yet active`)
+      if (disc.endsAt && now > disc.endsAt) throw new Error(`Discount ${disc.code} has expired`)
+      if (disc.usageLimit !== null && disc.usedCount >= disc.usageLimit) throw new Error(`Discount ${disc.code} has reached its usage limit`)
+      if (disc.minPurchase !== null && subtotal < disc.minPurchase) {
+        throw new Error(`Minimum purchase of $${disc.minPurchase.toFixed(2)} required for discount ${disc.code}`)
+      }
+    }
+
+    if (rawCode && rawCode !== 'CUSTOM') {
+      const disc = await this.prisma.discount.findUnique({ where: { code: rawCode.toUpperCase() } })
+      if (!disc || disc.status !== 'active') throw new Error(`Discount code ${rawCode} is invalid or inactive`)
+      usableWindow(disc)
+      this.assertDiscountEligible(disc, customer, lineItems as { productId: string }[])
+      const effect = applyDiscount(disc)
+      discountAmount = effect.amount
+      if (effect.freeShipping) effectiveShipping = 0
       discountCodeObj = { code: disc.code, amount: discountAmount }
     } else if (discountAmount > 0) {
       if (discountAmount > subtotal + 0.01) throw new Error('Discount amount exceeds subtotal')
       discountCodeObj = { code: 'CUSTOM', amount: roundMoney(discountAmount) }
+    } else {
+      // Shopify automatic discounts: best single eligible automatic discount applies without a code.
+      const automatics = (await this.prisma.discount.findMany({ where: { method: 'automatic', status: 'active' } }))
+        .filter((disc) => {
+          try {
+            usableWindow(disc)
+            this.assertDiscountEligible(disc, customer, lineItems as { productId: string }[])
+            return true
+          } catch {
+            return false
+          }
+        })
+        .map((disc) => ({ disc, effect: applyDiscount(disc) }))
+        .sort((a, b) => (b.effect.amount + (b.effect.freeShipping ? effectiveShipping : 0)) - (a.effect.amount + (a.effect.freeShipping ? effectiveShipping : 0)))
+      if (automatics.length > 0 && (automatics[0]!.effect.amount > 0 || automatics[0]!.effect.freeShipping)) {
+        const best = automatics[0]!
+        discountAmount = best.effect.amount
+        if (best.effect.freeShipping) effectiveShipping = 0
+        discountCodeObj = { code: best.disc.code, amount: discountAmount }
+      }
     }
 
     const taxTotal = await this.taxFromSettings({
       taxExempt: Boolean(customer.taxExempt),
       subtotal,
       discountAmount,
-      shippingPrice,
+      shippingPrice: effectiveShipping,
     })
+    const total = roundMoney(Math.max(0, subtotal - discountAmount) + effectiveShipping + taxTotal)
+
+    // Gift card tender: applied to the amount due, deducted from the card at convert.
+    let giftCardObj: { code: string; amount: number } | null = null
+    const rawGift = input.giftCardCode ? String(input.giftCardCode).trim().toUpperCase() : null
+    if (rawGift) {
+      const card = await this.prisma.giftCard.findUnique({ where: { code: rawGift } })
+      if (!card) throw new Error(`Gift card ${rawGift} not found`)
+      if (card.status === 'disabled') throw new Error(`Gift card ${rawGift} is disabled`)
+      if (card.expiresAt && new Date() > card.expiresAt) throw new Error(`Gift card ${rawGift} has expired`)
+      const applied = roundMoney(Math.min(card.balance, Math.max(0, total)))
+      if (applied <= 0) throw new Error(`Gift card ${rawGift} has no remaining balance`)
+      giftCardObj = { code: card.code, amount: applied }
+    }
 
     return {
       customer,
@@ -917,8 +1138,9 @@ export class OrdersService {
       taxTotal,
       discountAmount,
       discountCodeObj,
-      shippingPrice,
-      total: roundMoney(Math.max(0, subtotal - discountAmount) + shippingPrice + taxTotal),
+      giftCardObj,
+      shippingPrice: effectiveShipping,
+      total,
     }
   }
   async calculateDraft(input: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -934,13 +1156,15 @@ export class OrdersService {
       shippingAddress: computed.addr,
       billingAddress: computed.addr,
       discountCode: computed.discountCodeObj,
+      giftCardCode: computed.giftCardObj?.code ?? null,
+      giftCardApplied: computed.giftCardObj?.amount ?? 0,
     }
   }
 
 
   async createDraft(input: any): Promise<any> {
     const computed = await this.buildDraftComputation(input)
-    const { customer, lineItems, addr, subtotal, taxTotal, discountCodeObj, shippingPrice, total } = computed
+    const { customer, lineItems, addr, subtotal, taxTotal, discountCodeObj, giftCardObj, shippingPrice, total } = computed
     const now = new Date()
     const order = await this.prisma.order.create({
       data: {
@@ -962,6 +1186,7 @@ export class OrdersService {
         taxTotal,
         total,
         discountCode: discountCodeObj ? toJson(discountCodeObj) : null,
+        giftCard: giftCardObj ? toJson(giftCardObj) : null,
         currency: 'USD',
         tags: toJson(input.tags ?? []),
         note: input.note ?? null,
@@ -979,7 +1204,7 @@ export class OrdersService {
     const existing = await this.prisma.order.findUnique({ where: { id } })
     if (!existing || !existing.isDraft) throw new Error('Draft not found')
     const computed = await this.buildDraftComputation(input)
-    const { customer, lineItems, addr, subtotal, taxTotal, discountCodeObj, shippingPrice, total } = computed
+    const { customer, lineItems, addr, subtotal, taxTotal, discountCodeObj, giftCardObj, shippingPrice, total } = computed
     await this.prisma.order.update({
       where: { id },
       data: {
@@ -994,6 +1219,7 @@ export class OrdersService {
         shippingPrice,
         shippingTitle: shippingPrice === 0 ? 'Free shipping' : 'Standard shipping',
         discountCode: discountCodeObj ? toJson(discountCodeObj) : null,
+        giftCard: giftCardObj ? toJson(giftCardObj) : null,
         note: input.note ?? null,
         tags: toJson(input.tags ?? []),
       },
@@ -1011,13 +1237,27 @@ export class OrdersService {
     if (!draft || !draft.isDraft) throw new Error('Draft not found')
     const lineItems = parseJson<{ id: string; variantId: string; quantity: number }[]>(draft.lineItems as string, [])
 
-    // Discount usage must be checked before any stock is reserved (no partial commit).
+    // Pre-checks: discount and gift card must be validated BEFORE any stock is reserved
+    // to guarantee the no-partial-commit invariant.
     const discountRef = parseJson<{ code?: string } | null>(draft.discountCode as string, null)
     if (discountRef?.code && discountRef.code !== 'CUSTOM') {
       const disc = await this.prisma.discount.findUnique({ where: { code: discountRef.code } })
       if (disc && disc.usageLimit !== null && disc.usedCount >= disc.usageLimit) {
         throw new Error(`Discount code ${disc.code} has reached its usage limit`)
       }
+    }
+
+    const giftRef = parseJson<{ code?: string; amount?: number } | null>(draft.giftCard as string, null)
+    let validatedCard: GiftCardRow | null = null
+    let appliedGift = 0
+    if (giftRef?.code && (giftRef.amount ?? 0) > 0) {
+      const card = await this.prisma.giftCard.findUnique({ where: { code: giftRef.code } })
+      if (!card) throw new Error(`Gift card ${giftRef.code} not found`)
+      if (card.status === 'disabled') throw new Error(`Gift card ${giftRef.code} is disabled`)
+      if (card.expiresAt && new Date() > card.expiresAt) throw new Error(`Gift card ${giftRef.code} has expired`)
+      appliedGift = roundMoney(Math.min(giftRef.amount ?? 0, card.balance))
+      if (appliedGift <= 0) throw new Error(`Gift card ${giftRef.code} has no remaining balance`)
+      validatedCard = card
     }
 
     const needed = new Map<string, number>()
@@ -1037,6 +1277,31 @@ export class OrdersService {
         await this.prisma.discount.update({ where: { code: disc.code }, data: { usedCount: { increment: 1 } } })
       }
     }
+
+    let bornPaid = false
+    if (validatedCard && appliedGift > 0) {
+      const history = parseJson<unknown[]>(validatedCard.history as string, [])
+      history.push({ id: uid('gch'), at: new Date().toISOString(), type: 'redeemed', amount: -appliedGift, note: `Applied to order ${draft.name}` })
+      await this.prisma.giftCard.update({
+        where: { code: validatedCard.code },
+        data: { balance: roundMoney(validatedCard.balance - appliedGift), history: toJson(history) },
+      })
+      await this.prisma.balanceTransaction.create({
+        data: {
+          id: uid('txn'),
+          type: 'gift_card',
+          amount: -appliedGift,
+          fee: 0,
+          net: -appliedGift,
+          orderId: id,
+          description: `Gift card ${validatedCard.code} applied to ${draft.name}`,
+          payoutId: null,
+          at: new Date(),
+        },
+      })
+      bornPaid = appliedGift >= draft.total - 0.01
+      await this.addTimeline(id, 'payment', `Gift card ${validatedCard.code} applied — $${appliedGift.toFixed(2)}`)
+    }
     const next = await this.allocateOrderNumber()
 
     await this.prisma.order.update({
@@ -1045,7 +1310,8 @@ export class OrdersService {
         name: `#${next}`,
         status: 'open',
         isDraft: false,
-        paymentStatus: 'pending',
+        paymentStatus: bornPaid ? 'paid' : 'pending',
+        giftCard: appliedGift > 0 ? toJson({ code: validatedCard!.code, amount: appliedGift }) : null,
         createdAt: new Date(),
       },
     })

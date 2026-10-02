@@ -131,6 +131,7 @@ model Order {
   fulfillments      Json      
   refunds           Json      
   paymentGateway    String    @default("Shopify Payments")
+  giftCard          Json?
   isDraft           Boolean   @default(false)
 
   @@index([status])

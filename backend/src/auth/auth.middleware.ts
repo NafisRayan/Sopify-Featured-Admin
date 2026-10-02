@@ -11,12 +11,14 @@ declare module 'express-serve-static-core' {
 }
 
 function isPublicPath(req: Request): boolean {
+  if (req.method === 'OPTIONS') return true
   if (req.path.startsWith('/auth/login') && req.method === 'POST') return true
   if (req.path.startsWith('/auth/logout') && req.method === 'POST') return true
   return false
 }
 
 function requiresAuth(req: Request): boolean {
+  if (req.method === 'OPTIONS') return false
   if (req.path === '/graphql') return true
   if (req.path === '/uploads' && req.method === 'POST') return true
   return false

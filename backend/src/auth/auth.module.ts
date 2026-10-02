@@ -18,8 +18,4 @@ import { SessionService } from './session.service'
   controllers: [AuthController],
   exports: [SessionService, AuthorizationService],
 })
-export class AuthModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(AuthMiddleware).forRoutes('*')
-  }
-}
+export class AuthModule {}

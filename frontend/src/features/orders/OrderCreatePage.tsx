@@ -6,8 +6,8 @@ import { Badge, Button, Card, CardHeader, CardSection, Input, PageHeader, Select
 import { VariantPickerModal, type PickedVariant } from '@/components/VariantPickerModal'
 import { formatMoney, initials } from '@/lib/format'
 import { roundMoney } from '@/lib/money'
-import { createDraft } from '@/services/ordersService'
-import { IS_REMOTE } from '@/services/api'
+import { createDraft, convertDraft, markAsPaid } from '@/services/ordersService'
+import { IS_REMOTE, mutatePayload } from '@/services/api'
 
 
 /** Orders → Create order (full admin flow) */
@@ -17,6 +17,7 @@ export default function OrderCreatePage() {
   const customers = useStore((s) => s.customers)
   const companies = useStore((s) => s.companies)
   const discounts = useStore((s) => s.discounts)
+  const giftCards = useStore((s) => s.giftCards)
   const settings = useStore((s) => s.settings)
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerId, setCustomerId] = useState('')
@@ -27,6 +28,7 @@ export default function OrderCreatePage() {
   const [shipping, setShipping] = useState('6.99')
   const [discount, setDiscount] = useState('0')
   const [discountCode, setDiscountCode] = useState('')
+  const [giftCard, setGiftCard] = useState('')
   const [saving, setSaving] = useState<'draft' | 'paid' | null>(null)
   const customer = customers.find((c) => c.id === customerId)
   const customerOptions = useMemo(() => {
@@ -73,12 +75,18 @@ export default function OrderCreatePage() {
     return {
       subtotal,
       discountAmount,
-      shippingPrice,
+      shippingPrice: Number(shipping) || 0,
       tax,
       taxRate,
       total: roundMoney(Math.max(0, subtotal - discountAmount) + shippingPrice + tax),
     }
   }, [items, discount, discountCode, shipping, b2bDiscountPct, customer, settings, discounts])
+  const activeGiftCard = giftCard.trim()
+    ? giftCards.find((g) => g.code.toUpperCase() === giftCard.trim().toUpperCase() && g.status !== 'disabled')
+    : undefined
+  const giftCardApplied = activeGiftCard && activeGiftCard.balance > 0
+    ? roundMoney(Math.max(0, Math.min(activeGiftCard.balance, totals.total)))
+    : 0
 
   const setQty = (variantId: string, delta: number) =>
     setItems((prev) =>
@@ -98,19 +106,27 @@ export default function OrderCreatePage() {
         shippingPrice: Number(shipping) || 0,
         discountAmount: totals.discountAmount,
         discountCode: discountCode.trim() || undefined,
+        giftCardCode: giftCard.trim() || undefined,
       })
       if (thenPaid) {
         if (IS_REMOTE) {
           // server-sequential: draft already exists server-side (createDraft)
-          const { mutatePayload } = await import('@/services/api')
-          await mutatePayload('draftOrderConvert', `draftOrderConvert(id: ${JSON.stringify(draft.id)}) { order { id } userErrors { field message } }`)
-          await mutatePayload('orderMarkAsPaid', `orderMarkAsPaid(id: ${JSON.stringify(draft.id)}) { order { id } userErrors { field message } }`)
+          const conv = await mutatePayload(
+            'draftOrderConvert',
+            `draftOrderConvert(id: ${JSON.stringify(draft.id)}) { order { id paymentStatus } userErrors { field message } }`,
+          )
+          const paymentStatus = conv.entity?.paymentStatus ?? conv.entity?.order?.paymentStatus ?? 'pending'
+          if (paymentStatus !== 'paid') {
+            await mutatePayload('orderMarkAsPaid', `orderMarkAsPaid(id: ${JSON.stringify(draft.id)}) { order { id } userErrors { field message } }`)
+          }
           useStore.getState().patchOrder(draft.id, { isDraft: false, status: 'open', paymentStatus: 'paid' })
           navigate(`/orders/${draft.id}`)
         } else {
-          const { convertDraft, markAsPaid } = await import('@/services/ordersService')
           const realId = await convertDraft(draft.id)
-          await markAsPaid(realId)
+          const converted = useStore.getState().orders.find((o) => o.id === realId)
+          if (converted && converted.paymentStatus !== 'paid') {
+            await markAsPaid(realId)
+          }
           navigate(`/orders/${realId}`)
         }
       } else {
@@ -215,6 +231,7 @@ export default function OrderCreatePage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <Input label="Shipping" type="number" step="0.01" min="0" prefix="$" value={shipping} onChange={(e) => setShipping(e.target.value)} />
                 <Input label="Discount code" placeholder="e.g. SAVE10" value={discountCode} onChange={(e) => setDiscountCode(e.target.value)} />
+                <Input label="Gift card code" placeholder="e.g. NORTH-1234-…" value={giftCard} onChange={(e) => setGiftCard(e.target.value)} />
                 <Input label="Custom discount" type="number" step="0.01" min="0" prefix="$" value={discount} onChange={(e) => setDiscount(e.target.value)} />
               </div>
               <div className="mt-3 space-y-3">
@@ -237,6 +254,12 @@ export default function OrderCreatePage() {
                 )}
                 <div className="flex justify-between"><dt className="text-text-muted">Shipping</dt><dd>{totals.shippingPrice === 0 ? 'Free' : formatMoney(totals.shippingPrice)}</dd></div>
                 <div className="flex justify-between"><dt className="text-text-muted">Tax ({totals.taxRate}%)</dt><dd>{formatMoney(totals.tax)}</dd></div>
+                {giftCardApplied > 0 && (
+                  <div className="flex justify-between"><dt className="text-text-muted">Gift card</dt><dd className="text-critical-strong">−{formatMoney(giftCardApplied)}</dd></div>
+                )}
+                {giftCardApplied > 0 && (
+                  <div className="flex justify-between"><dt className="text-text-muted">Amount due</dt><dd className="font-semibold text-critical-strong">{formatMoney(roundMoney(totals.total - giftCardApplied))}</dd></div>
+                )}
                 <div className="flex justify-between border-t border-border pt-1.5 text-[15px] font-semibold"><dt>Total</dt><dd>{formatMoney(totals.total)}</dd></div>
               </dl>
               <div className="mt-4 space-y-2">

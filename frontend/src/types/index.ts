@@ -188,7 +188,21 @@ export interface Order {
   fulfillments: Fulfillment[]
   refunds: Refund[]
   paymentGateway: string
+  giftCardCode?: string | null
+  giftCardApplied?: number
+  transactions?: OrderTransaction[]
   isDraft?: boolean
+}
+
+export interface OrderTransaction {
+  id: string
+  createdAt: string
+  kind: 'SALE' | 'REFUND' | 'GIFT_CARD'
+  amount: number
+  fee: number
+  net: number
+  gateway: string
+  description: string
 }
 
 // Abandoned checkout shares most order shape
