@@ -105,11 +105,13 @@ export async function renameFile(id: string, name: string): Promise<void> {
   await delay(200)
   if (!name.trim()) throw new Error('File name cannot be empty')
   getStore().patchFile(id, { name: name.trim() })
+  syncMutation(`mutation { fileUpdate(id: ${gqlLiteral(id)}, name: ${gqlLiteral(name.trim())}) { userErrors { message } } }`)
 }
 
 export async function setFileAlt(id: string, alt: string): Promise<void> {
   await delay(150)
   getStore().patchFile(id, { alt })
+  syncMutation(`mutation { fileUpdate(id: ${gqlLiteral(id)}, alt: ${gqlLiteral(alt)}) { userErrors { message } } }`)
 }
 
 export async function deleteFiles(ids: string[]): Promise<void> {

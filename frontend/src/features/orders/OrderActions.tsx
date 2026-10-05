@@ -284,17 +284,15 @@ export function ReturnDrawer({
     setSaving(true)
     try {
       const finalRefund = !refundTouched ? subtotal : Number(refundAmount || 0)
-      const ret = await createReturn({
+      await createReturn({
         orderId: order.id,
         lines: selectedLines,
         reason,
         restock,
         refundAmount: finalRefund,
       })
-      // close immediately (refund + restock) — staff-initiated returns in this flow resolve now
-      const { closeReturn } = await import('@/services/orderEditService')
-      await closeReturn(ret.id, { markRefunded: finalRefund > 0 })
-      toast(`Return created for ${order.name}`)
+      // lands as 'requested' — approve/decline/cancel/process from the Returns card
+      toast(`Return requested for ${order.name}`)
       setQtyDraft(null)
       onClose()
     } catch (e) {

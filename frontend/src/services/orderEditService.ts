@@ -187,7 +187,7 @@ export async function createReturn(input: ReturnInput): Promise<ReturnRecord> {
   const record: ReturnRecord = {
     id: uid('ret'),
     orderId: input.orderId,
-    status: 'open',
+    status: 'requested',
     lines: input.lines,
     reason: input.reason,
     restock: input.restock,
@@ -205,7 +205,7 @@ export async function closeReturn(returnId: string, opts: { markRefunded: boolea
   await delay(450)
   const store = getStore()
   const ret = store.returns.find((r) => r.id === returnId)
-  if (!ret || ret.status !== 'open') throw new Error('Return not found or already closed')
+  if (!ret || !['requested', 'open', 'approved'].includes(ret.status)) throw new Error('Return not found or already closed')
   const order = store.orders.find((o) => o.id === ret.orderId)
   if (!order) throw new Error('Order not found')
 
@@ -258,7 +258,7 @@ export async function closeReturn(returnId: string, opts: { markRefunded: boolea
   )
   if (refundedAll) orderPatch.fulfillmentStatus = 'returned'
   store.patchOrder(order.id, orderPatch)
-  store.upsertReturn({ ...ret, status: 'returned', closedAt: new Date().toISOString() })
+  store.upsertReturn({ ...ret, status: 'complete', closedAt: new Date().toISOString() })
   syncMutation(`mutation { returnClose(id: ${gqlLiteral(returnId)}, markRefunded: ${opts.markRefunded}) { userErrors { message } } }`)
   addTimeline(
     order.id,
@@ -274,6 +274,7 @@ export async function sendDraftInvoice(orderId: string): Promise<void> {
   await delay(350)
   const order = getStore().orders.find((o) => o.id === orderId)
   if (!order || !order.isDraft) throw new Error('Draft not found')
+  syncMutation(`mutation { draftOrderInvoiceSend(id: ${gqlLiteral(orderId)}) { userErrors { message } } }`)
   addTimeline(orderId, `Invoice emailed to ${order.email}`, 'note')
   logActivity('Sent draft invoice', 'order', orderId)
 }

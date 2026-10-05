@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Copy, Droplet, Eye, Globe, Menu as MenuIcon, MoreVertical, Paintbrush,
+  Copy, Droplet, Globe, Menu as MenuIcon, MoreVertical, Paintbrush,
   Pencil, Rocket, Trash2, Type,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
@@ -72,12 +72,6 @@ export default function OnlineStorePage() {
                   Customize
                 </Button>
               )}
-              <Button
-                icon={<Eye size={13} />}
-                onClick={() => toast('The storefront preview is not part of this admin demo', { tone: 'info' })}
-              >
-                Preview
-              </Button>
             </div>
           </div>
         </div>

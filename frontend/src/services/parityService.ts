@@ -8,7 +8,7 @@ import { customerStats } from '@/store/selectors'
 import type {
   Company, CustomerSegment, InventoryTransfer, GiftCard,
 } from '@/types/parity'
-import type { Customer, Address, InventoryHistoryEntry } from '@/types'
+import type { Customer, Address, InventoryHistoryEntry, PriceList, SavedSearch } from '@/types'
 
 const author = () => CURRENT_USER.name
 
@@ -86,7 +86,16 @@ export async function updateCompany(id: string, patch: Partial<Company>): Promis
   await delay(300)
   const c = getStore().companies.find((x) => x.id === id)
   if (!c) throw new Error('Company not found')
-  getStore().upsertCompany({ ...c, ...patch })
+  const merged = { ...c, ...patch }
+  getStore().upsertCompany(merged)
+  const input: Record<string, unknown> = { name: merged.name, customerId: merged.customerId }
+  if (merged.priceListDiscountPercent !== undefined) input.priceListDiscountPercent = merged.priceListDiscountPercent
+  const loc = merged.locations[0]
+  if (loc) {
+    input.locationName = loc.name
+    input.address = loc.address
+  }
+  syncMutation(`mutation { companyUpdate(id: ${gqlLiteral(id)}, company: ${gqlLiteral(input)}) { userErrors { message } } }`)
 }
 
 export async function deleteCompany(id: string): Promise<void> {
@@ -94,6 +103,7 @@ export async function deleteCompany(id: string): Promise<void> {
   const c = getStore().companies.find((x) => x.id === id)
   if (!c) throw new Error('Company not found')
   getStore().removeCompany(id)
+  syncMutation(`mutation { companyDelete(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
   logActivity('Deleted company', 'company', id)
 }
 
@@ -105,6 +115,7 @@ export async function addCompanyLocation(companyId: string, name: string, addres
     ...c,
     locations: [...c.locations, { id: uid('cl'), name, address, taxExempt: false }],
   })
+  syncMutation(`mutation { companyLocationAdd(id: ${gqlLiteral(companyId)}, location: ${gqlLiteral({ name, address })}) { userErrors { message } } }`)
 }
 
 export async function addCompanyContact(companyId: string, contact: { name: string; email: string; phone?: string }): Promise<void> {
@@ -121,10 +132,53 @@ export async function addCompanyContact(companyId: string, contact: { name: stri
       { id: uid('cc'), name: contact.name, email: contact.email, phone: contact.phone, locationIds: c.locations.map((l) => l.id), isPrimary: c.contacts.length === 0 },
     ],
   })
+  syncMutation(`mutation { companyContactAdd(id: ${gqlLiteral(companyId)}, contact: ${gqlLiteral({ name: contact.name, email: contact.email, phone: contact.phone })}) { userErrors { message } } }`)
 }
 
 export function companySpend(company: Company): number {
   return roundMoney(customerStats(company.customerId).totalSpent)
+}
+
+// ─── B2B price lists (Admin API: priceListCreate/Update/Delete) ────────────
+
+export async function createPriceList(input: {
+  name: string
+  currency?: string
+  companyId?: string
+  locationId?: string
+  entries: { variantId: string; price: number }[]
+}): Promise<PriceList> {
+  await delay(350)
+  const now = new Date().toISOString()
+  const priceList: PriceList = {
+    id: uid('pl'),
+    name: input.name.trim(),
+    currency: input.currency ?? getStore().settings.currency,
+    companyId: input.companyId,
+    locationId: input.locationId,
+    parentCompanyId: input.companyId ?? '',
+    entries: input.entries.map((e) => ({ id: uid('ple'), variantId: e.variantId, price: e.price })),
+    createdAt: now,
+    updatedAt: now,
+  }
+  getStore().upsertPriceList(priceList)
+  syncMutation(`mutation { priceListCreate(input: ${gqlLiteral({ name: priceList.name, currency: priceList.currency, companyId: priceList.companyId, locationId: priceList.locationId, entries: input.entries })}) { userErrors { message } } }`)
+  return priceList
+}
+
+export async function updatePriceList(id: string, patch: Partial<PriceList>): Promise<void> {
+  await delay(300)
+  const pl = getStore().priceLists.find((x) => x.id === id)
+  if (!pl) throw new Error('Price list not found')
+  const merged: PriceList = { ...pl, ...patch, updatedAt: new Date().toISOString() }
+  getStore().upsertPriceList(merged)
+  syncMutation(`mutation { priceListUpdate(id: ${gqlLiteral(id)}, input: ${gqlLiteral({ name: merged.name, currency: merged.currency, companyId: merged.companyId, locationId: merged.locationId, entries: merged.entries.map((e) => ({ variantId: e.variantId, price: e.price })) })}) { userErrors { message } } }`)
+}
+
+export async function deletePriceList(id: string): Promise<void> {
+  await delay(250)
+  getStore().removePriceList(id)
+  syncMutation(`mutation { priceListDelete(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }
 
 // ─── Customer segments ─────────────────────────────────────────────────────
@@ -178,6 +232,7 @@ export async function createSegment(input: { name: string; description?: string;
     createdAt: new Date().toISOString(),
   }
   store.upsertSegment(segment)
+  syncMutation(`mutation { segmentCreate(segment: ${gqlLiteral({ name: segment.name, description: segment.description, filters: segment.filters })}) { userErrors { message } } }`)
   logActivity('Created segment', 'segment', segment.id)
   return segment
 }
@@ -186,13 +241,47 @@ export async function updateSegment(id: string, patch: Partial<CustomerSegment>)
   await delay(250)
   const s = getStore().segments.find((x) => x.id === id)
   if (!s) throw new Error('Segment not found')
-  getStore().upsertSegment({ ...s, ...patch })
+  const merged = { ...s, ...patch }
+  getStore().upsertSegment(merged)
+  syncMutation(`mutation { segmentUpdate(id: ${gqlLiteral(id)}, segment: ${gqlLiteral({ name: merged.name, description: merged.description, filters: merged.filters.map((f) => ({ column: f.column, relation: f.relation, value: f.value })) })}) { userErrors { message } } }`)
 }
 
 export async function deleteSegment(id: string): Promise<void> {
   await delay(250)
   getStore().removeSegment(id)
+  syncMutation(`mutation { segmentDelete(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
   logActivity('Deleted segment', 'segment', id)
+}
+
+// ─── Saved searches (per-resource list filters) ────────────────────────────
+
+export async function createSavedSearch(input: { name: string; resourceType: string; query: string }): Promise<SavedSearch> {
+  await delay(250)
+  const search: SavedSearch = {
+    id: uid('ss'),
+    name: input.name.trim(),
+    resourceType: input.resourceType,
+    query: input.query,
+    createdAt: new Date().toISOString(),
+  }
+  getStore().upsertSavedSearch(search)
+  syncMutation(`mutation { savedSearchCreate(search: ${gqlLiteral({ name: search.name, resourceType: search.resourceType, query: search.query })}) { userErrors { message } } }`)
+  return search
+}
+
+export async function updateSavedSearch(id: string, patch: Partial<SavedSearch>): Promise<void> {
+  await delay(250)
+  const s = getStore().savedSearches.find((x) => x.id === id)
+  if (!s) throw new Error('Saved search not found')
+  const merged = { ...s, ...patch }
+  getStore().upsertSavedSearch(merged)
+  syncMutation(`mutation { savedSearchUpdate(id: ${gqlLiteral(id)}, search: ${gqlLiteral({ name: merged.name, resourceType: merged.resourceType, query: merged.query })}) { userErrors { message } } }`)
+}
+
+export async function deleteSavedSearch(id: string): Promise<void> {
+  await delay(200)
+  getStore().removeSavedSearch(id)
+  syncMutation(`mutation { savedSearchDelete(id: ${gqlLiteral(id)}) { userErrors { message } } }`)
 }
 
 // ─── Inventory transfers ───────────────────────────────────────────────────

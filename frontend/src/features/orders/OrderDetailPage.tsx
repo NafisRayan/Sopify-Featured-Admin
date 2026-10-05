@@ -9,7 +9,7 @@ import { customerStats } from '@/store/selectors'
 import {
   Badge, Button, Card, CardHeader, CardSection, DividedCard, Drawer, EmptyState, Input, Modal,
   PageHeader, PortalMenu, Select, TagInput, Textarea, Toggle, useConfirm, useToast,
-  type MenuItemDef,
+  type BadgeTone, type MenuItemDef,
 } from '@/components/ui'
 import { formatDateTime, formatMoney, formatRelative, initials } from '@/lib/format'
 import { FULFILLMENT_STATUS_LABELS, PAYMENT_STATUS_LABELS, ORDER_STATUS_LABELS } from '@/lib/constants'
@@ -22,9 +22,37 @@ import { useCan } from '@/lib/permissions'
 import { canEditOrder, sendDraftInvoice } from '@/services/orderEditService'
 import { closeReturn } from '@/services/orderEditService'
 import { EditOrderDrawer, ReturnDrawer } from './OrderActions'
+import {
+  FULFILLMENT_EVENT_STATUSES, addFulfillmentEvent, approveReturn, cancelFulfillment, cancelReturn,
+  declineReturn,
+} from './useOrderActions'
 import type { Order, OrderLineItem, TimelineEvent } from '@/types'
+import type { ReturnRecord } from '@/types/parity'
 
 const CARRIERS = ['USPS', 'UPS', 'FedEx', 'DHL']
+
+/** Legacy backend/seed statuses map onto the requested/complete/canceled lifecycle. */
+const RETURN_STATUS_LABEL: Record<ReturnRecord['status'], string> = {
+  requested: 'Requested',
+  open: 'Requested',
+  approved: 'Approved',
+  complete: 'Complete',
+  returned: 'Complete',
+  declined: 'Declined',
+  canceled: 'Canceled',
+  cancelled: 'Canceled',
+}
+
+const RETURN_STATUS_TONE: Record<ReturnRecord['status'], BadgeTone> = {
+  requested: 'warning',
+  open: 'warning',
+  approved: 'info',
+  complete: 'success',
+  returned: 'success',
+  declined: 'critical',
+  canceled: 'neutral',
+  cancelled: 'neutral',
+}
 
 function TimelineRow({ event }: { event: TimelineEvent }) {
   const dotTone: Record<TimelineEvent['type'], string> = {
@@ -78,6 +106,10 @@ export default function OrderDetailPage() {
   const [refundItems, setRefundItems] = useState<Set<string>>(new Set())
   const [editOpen, setEditOpen] = useState(false)
   const [returnOpen, setReturnOpen] = useState(false)
+  // fulfillment tracking-event inline form (open for one fulfillment at a time)
+  const [eventFormFor, setEventFormFor] = useState<string | null>(null)
+  const [eventStatus, setEventStatus] = useState('IN_TRANSIT')
+  const [eventMessage, setEventMessage] = useState('')
 
   const can = {
     edit: useCan('orders', 'edit'),
@@ -98,7 +130,7 @@ export default function OrderDetailPage() {
     if (order.status === 'cancelled' || order.paymentStatus === 'refunded' || order.fulfillmentStatus === 'returned' || order.fulfillmentStatus === 'fulfilled') {
       return []
     }
-    const fulfilledIds = new Set(order.fulfillments.flatMap((f) => f.lineItemIds))
+    const fulfilledIds = new Set(order.fulfillments.filter((f) => f.status !== 'canceled').flatMap((f) => f.lineItemIds))
     return order.lineItems.filter((li) => li.requiresShipping && !fulfilledIds.has(li.id))
   }, [order])
 
@@ -306,7 +338,7 @@ export default function OrderDetailPage() {
             <CardHeader title={`${order.lineItems.reduce((s, li) => s + li.quantity, 0)} item${order.lineItems.length === 1 && order.lineItems[0]?.quantity === 1 ? '' : 's'}`} />
             <ul className="divide-y divide-border">
               {order.lineItems.map((li) => {
-                const fulfillment = order.fulfillments.find((f) => f.lineItemIds.includes(li.id))
+                const fulfillment = order.fulfillments.find((f) => f.status !== 'canceled' && f.lineItemIds.includes(li.id))
                 const refunded = order.refunds.some((r) => r.lineItemIds.includes(li.id))
                 return (
                   <li key={li.id} className="flex items-start gap-3 px-4 py-3 md:px-5">
@@ -397,6 +429,118 @@ export default function OrderDetailPage() {
               </dl>
             </CardSection>
           </DividedCard>
+
+          {/* Fulfillments — tracking lifecycle: cancel + tracking events */}
+          {order.fulfillments.length > 0 && (
+            <DividedCard>
+              <CardHeader title={`Fulfillments (${order.fulfillments.length})`} subtitle="Tracking numbers and delivery events" />
+              <ul className="divide-y divide-border">
+                {order.fulfillments.map((f) => {
+                  const canceled = f.status === 'canceled'
+                  const itemTitles = f.lineItemIds
+                    .map((id) => order.lineItems.find((li) => li.id === id)?.title)
+                    .filter((t): t is string => Boolean(t))
+                  const formOpen = eventFormFor === f.id
+                  return (
+                    <li key={f.id} className="px-4 py-3 text-[13px]">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium">
+                          {itemTitles.length} item{itemTitles.length === 1 ? '' : 's'}
+                          {itemTitles.length > 0 && <span className="font-normal text-text-muted"> · {itemTitles.slice(0, 3).join(', ')}{itemTitles.length > 3 ? '…' : ''}</span>}
+                        </span>
+                        <Badge tone={canceled ? 'critical' : 'success'} dot>
+                          {canceled ? 'Canceled' : 'Fulfilled'}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-xs text-text-muted">
+                        {formatDateTime(f.createdAt)} · from {allLocations.find((l) => l.id === f.locationId)?.name ?? 'Unknown location'}
+                        {f.trackingNumber && ` · ${f.carrier ?? 'Tracking'} ${f.trackingNumber}`}
+                      </p>
+
+                      {(f.events ?? []).length > 0 && (
+                        <ol className="mt-2 space-y-1 border-l-2 border-border pl-3 text-xs text-text-muted">
+                          {(f.events ?? []).map((ev) => (
+                            <li key={ev.id}>
+                              <span className="font-medium text-text">{FULFILLMENT_EVENT_STATUSES[ev.status] ?? ev.status}</span>
+                              {ev.message && ` — ${ev.message}`}
+                              <span className="text-text-subdued"> · {formatDateTime(ev.occurredAt)}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+
+                      {can.edit && !canceled && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Button size="sm" onClick={() => setEventFormFor(formOpen ? null : f.id)}>
+                            Add tracking event
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() =>
+                              confirm({
+                                title: 'Cancel this fulfillment?',
+                                body: 'Its items return to unfulfilled and can be fulfilled again. This cannot be undone.',
+                                confirmLabel: 'Cancel fulfillment',
+                                destructive: true,
+                                onConfirm: async () => {
+                                  try {
+                                    await cancelFulfillment(order.id, f.id)
+                                    toast('Fulfillment canceled', { tone: 'warning' })
+                                  } catch (e) {
+                                    toast(e instanceof Error ? e.message : 'Failed to cancel fulfillment', { tone: 'critical' })
+                                  }
+                                },
+                              })
+                            }
+                          >
+                            Cancel fulfillment
+                          </Button>
+                        </div>
+                      )}
+
+                      {formOpen && (
+                        <div className="mt-2 space-y-2 rounded-lg border border-border bg-[#fafafa] p-3">
+                          <Select
+                            label="Status"
+                            value={eventStatus}
+                            onChange={(e) => setEventStatus(e.target.value)}
+                            options={Object.entries(FULFILLMENT_EVENT_STATUSES).map(([value, label]) => ({ label, value }))}
+                          />
+                          <Input
+                            label="Message (optional)"
+                            value={eventMessage}
+                            onChange={(e) => setEventMessage(e.target.value)}
+                            placeholder="e.g. Arrived at local facility"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" onClick={() => setEventFormFor(null)}>
+                              Discard
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              onClick={() => {
+                                void addFulfillmentEvent(order.id, f.id, eventStatus, eventMessage)
+                                  .then(() => {
+                                    toast('Tracking event added')
+                                    setEventFormFor(null)
+                                    setEventMessage('')
+                                  })
+                                  .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed to add event', { tone: 'critical' }))
+                              }}
+                            >
+                              Add event
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </DividedCard>
+          )}
 
           {/* Timeline */}
           <DividedCard>
@@ -567,36 +711,78 @@ export default function OrderDetailPage() {
             )
           })()}
 
-          {/* Returns on this order */}
+          {/* Returns on this order — full lifecycle: requested → approved → complete/declined/canceled */}
           {orderReturnRecords.length > 0 && (
             <Card padding={false}>
-              <CardHeader title={`Returns (${orderReturnRecords.length})`} />
+              <CardHeader title={`Returns (${orderReturnRecords.length})`} subtitle="Requested → approved → complete" />
               <ul className="divide-y divide-border">
-                {orderReturnRecords.map((r) => (
-                  <li key={r.id} className="px-4 py-2.5 text-[13px]">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">Return · {r.lines.reduce((s, l) => s + l.quantity, 0)} item(s)</span>
-                      <Badge tone={r.status === 'open' ? 'warning' : r.status === 'returned' ? 'success' : 'neutral'} dot>
-                        {r.status}
-                      </Badge>
-                    </div>
-                    <p className="mt-0.5 text-xs text-text-muted">
-                      {r.reason} · {formatMoney(r.refundAmount)}
-                    </p>
-                    {r.status === 'open' && can.refund && (
-                      <button
-                        className="mt-1 text-xs text-accent hover:underline"
-                        onClick={() =>
-                          void closeReturn(r.id, { markRefunded: true })
-                            .then(() => toast('Return closed — items restocked'))
-                            .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed', { tone: 'critical' }))
-                        }
-                      >
-                        Close return & refund
-                      </button>
-                    )}
-                  </li>
-                ))}
+                {orderReturnRecords.map((r) => {
+                  const pending = r.status === 'requested' || r.status === 'open'
+                  const actionable = pending || r.status === 'approved'
+                  return (
+                    <li key={r.id} className="px-4 py-2.5 text-[13px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">Return · {r.lines.reduce((s, l) => s + l.quantity, 0)} item(s)</span>
+                        <Badge tone={RETURN_STATUS_TONE[r.status]} dot>
+                          {RETURN_STATUS_LABEL[r.status]}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-xs text-text-muted">
+                        {r.reason} · {formatMoney(r.refundAmount)} · requested {formatRelative(r.createdAt)}
+                        {r.closedAt && ` · closed ${formatRelative(r.closedAt)}`}
+                      </p>
+                      {can.refund && actionable && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {pending && (
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                void approveReturn(r.id)
+                                  .then(() => toast('Return approved'))
+                                  .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed to approve', { tone: 'critical' }))
+                              }
+                            >
+                              Approve
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              const reason = window.prompt('Reason for declining this return')?.trim()
+                              if (!reason) return
+                              void declineReturn(r.id, reason)
+                                .then(() => toast('Return declined', { tone: 'warning' }))
+                                .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed to decline', { tone: 'critical' }))
+                            }}
+                          >
+                            Decline
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              void cancelReturn(r.id)
+                                .then(() => toast('Return canceled'))
+                                .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed to cancel', { tone: 'critical' }))
+                            }
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() =>
+                              void closeReturn(r.id, { markRefunded: r.refundAmount > 0 })
+                                .then(() => toast('Return processed — items restocked'))
+                                .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed to process', { tone: 'critical' }))
+                            }
+                          >
+                            {r.refundAmount > 0 ? 'Process & refund' : 'Process'}
+                          </Button>
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             </Card>
           )}

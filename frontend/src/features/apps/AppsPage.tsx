@@ -94,14 +94,6 @@ export default function AppsPage() {
             </p>
             {canEdit && (
               <div className="mt-2.5 flex flex-wrap gap-1.5">
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    toast(`${app.name} opens outside this demo admin`, { tone: 'info' })
-                  }
-                >
-                  Open
-                </Button>
                 <Button size="sm" onClick={() => void toggleApp(app.id).then(() => toast(app.status === 'installed' ? 'App disabled' : 'App enabled'))}>
                   {app.status === 'installed' ? 'Disable' : 'Enable'}
                 </Button>

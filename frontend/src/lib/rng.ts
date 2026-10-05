@@ -1,10 +1,10 @@
-/**
- * Deterministic PRNG (mulberry32) so generated seed data is stable across runs.
- * Also usable in the browser for id generation (non-seeded mode).
- */
+// Deterministic PRNG utilities for the one-time seed generators
+// (frontend/scripts/generate/**). Not used by the app runtime.
+
+/** mulberry32 — small, fast, deterministic 32-bit PRNG. */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0
-  return () => {
+  return function () {
     a |= 0
     a = (a + 0x6d2b79f5) | 0
     let t = Math.imul(a ^ (a >>> 15), 1 | a)
@@ -13,57 +13,62 @@ export function mulberry32(seed: number): () => number {
   }
 }
 
+/** Seeded RNG helper with pick/int/float/chance helpers. */
 export class Rng {
   private next: () => number
-  constructor(seed = 42) {
+
+  constructor(seed: number) {
     this.next = mulberry32(seed)
   }
+
   int(min: number, max: number): number {
     return Math.floor(this.next() * (max - min + 1)) + min
   }
+
   float(min: number, max: number, decimals = 2): number {
     const v = this.next() * (max - min) + min
     const f = 10 ** decimals
     return Math.round(v * f) / f
   }
-  pick<T>(arr: readonly T[]): T {
-    return arr[Math.floor(this.next() * arr.length)]!
+
+  pick<T>(list: readonly T[]): T {
+    return list[Math.floor(this.next() * list.length)]!
   }
-  /** Weighted pick: [[value, weight], ...] */
-  weighted<T>(pairs: readonly [T, number][]): T {
-    const total = pairs.reduce((s, [, w]) => s + w, 0)
-    let r = this.next() * total
-    for (const [value, w] of pairs) {
-      r -= w
-      if (r <= 0) return value
-    }
-    return pairs[pairs.length - 1]![0]
-  }
-  bool(pTrue = 0.5): boolean {
-    return this.next() < pTrue
-  }
+
   chance(p: number): boolean {
     return this.next() < p
   }
-  shuffle<T>(arr: T[]): T[] {
-    const a = [...arr]
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(this.next() * (i + 1))
-      ;[a[i], a[j]] = [a[j]!, a[i]!]
+
+  /** Weighted pick: entries are [value, weight] pairs; weights need not sum to 1. */
+  weighted<T>(entries: readonly (readonly [T, number])[]): T {
+    const total = entries.reduce((sum, [, w]) => sum + w, 0)
+    let roll = this.next() * total
+    for (const [value, w] of entries) {
+      roll -= w
+      if (roll <= 0) return value
     }
-    return a
+    return entries[entries.length - 1]![0]
   }
-  sample<T>(arr: readonly T[], n: number): T[] {
-    return this.shuffle([...arr]).slice(0, n)
+
+  /** n unique picks (or fewer when the list is smaller). */
+  sample<T>(list: readonly T[], n: number): T[] {
+    const pool = [...list]
+    const out: T[] = []
+    while (out.length < n && pool.length > 0) {
+      out.push(...pool.splice(Math.floor(this.next() * pool.length), 1))
+    }
+    return out
   }
-  /** Random date within the last `days` days, biased toward recent if skew=true */
-  dateWithin(days: number, skew = false): Date {
-    const now = Date.now()
-    const window = days * 24 * 3600 * 1000
-    const offset = skew ? this.next() ** 1.6 * window : this.next() * window
-    return new Date(now - offset)
-  }
+
+  /** Random date between two dates. */
   dateBetween(from: Date, to: Date): Date {
-    return new Date(from.getTime() + this.next() * (to.getTime() - from.getTime()))
+    const span = Math.max(0, to.getTime() - from.getTime())
+    return new Date(from.getTime() + this.next() * span)
+  }
+
+  /** Date within the last `days` days (or the next `days` when future=true). */
+  dateWithin(days: number, future = false): Date {
+    const offset = this.next() * days * 86400000
+    return new Date(Date.now() + (future ? offset : -offset))
   }
 }

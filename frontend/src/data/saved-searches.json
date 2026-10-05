@@ -1,0 +1,5 @@
+[
+  { "id": "ss_open_orders", "name": "Open orders", "resourceType": "orders", "query": "status:open", "createdAt": "2026-08-01T08:00:00.000Z" },
+  { "id": "ss_unfulfilled", "name": "Unfulfilled and paid", "resourceType": "orders", "query": "fulfillment_status:unfulfilled payment_status:paid", "createdAt": "2026-08-01T08:00:00.000Z" },
+  { "id": "ss_vip_customers", "name": "VIP tagged customers", "resourceType": "customers", "query": "tag:vip", "createdAt": "2026-08-01T08:00:00.000Z" }
+]

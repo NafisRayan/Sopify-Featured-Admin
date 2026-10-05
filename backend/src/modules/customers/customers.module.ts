@@ -6,6 +6,42 @@ import { parseJson, toJson, toConnection, filterByQuery } from '../../common/hel
 import { mapCustomer, mapCompany, mapSegment } from '../../common/mappers'
 import { uid, roundMoney } from '../../common/ids'
 
+const CONSENT_STATES: Record<string, true> = { subscribed: true, unsubscribed: true, pending: true }
+
+// B2B pricing for a customer's company: location-scoped price list entry wins,
+// then company-wide entry, else null (caller falls back to discount percent).
+export async function b2bPricing(
+  prisma: PrismaService,
+  customerId: string,
+  variantId: string,
+): Promise<{ fixedPrice: number | null; discountPercent: number }> {
+  const company = await prisma.company.findFirst({ where: { customerId } })
+  if (!company) return { fixedPrice: null, discountPercent: 0 }
+  const lists = await prisma.priceList.findMany({ where: { companyId: company.id }, include: { entries: true } })
+  const candidates = lists.filter((l) => l.entries.some((e) => e.variantId === variantId))
+  const entry =
+    (candidates.find((l) => l.locationId != null) ?? candidates.find((l) => l.locationId == null))
+      ?.entries.find((e) => e.variantId === variantId) ?? null
+  return { fixedPrice: entry ? entry.price : null, discountPercent: company.priceListDiscountPercent }
+}
+
+interface PriceListEntryRow {
+  id: string
+  variantId: string
+  price: number
+}
+
+interface PriceListRow {
+  id: string
+  name: string
+  currency: string
+  companyId: string | null
+  locationId: string | null
+  createdAt: Date
+  updatedAt: Date
+  entries: PriceListEntryRow[]
+}
+
 // ─── Service ────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -51,6 +87,16 @@ export class CustomersService {
     for (const r of rows) statsMap.set(r.id as string, await this.statsFor(r.id as string))
     const decorated = this.decorate(rows, statsMap)
     return toConnection(decorated, args.first, args.after, args.last, args.before)
+  }
+
+  async customersCount(query?: string) {
+    if (!query) return this.prisma.customer.count()
+    let rows = (await this.prisma.customer.findMany({ orderBy: { createdAt: 'desc' } })) as unknown as Record<string, unknown>[]
+    rows = filterByQuery(rows, query, (r) => [
+      `${r.firstName} ${r.lastName}`, r.email as string, (r.phone as string) ?? '',
+      parseJson<{ city?: string }[]>(r.addresses as string, []).map((a) => a.city ?? '').join(' '),
+    ])
+    return rows.length
   }
 
   async create(input: Record<string, any>) {
@@ -135,10 +181,34 @@ export class CustomersService {
     return this.customer(id)
   }
 
-  // companies
-  private async decorateCompany(c: Record<string, unknown>) {
+  // companies + price lists
+  private mapPriceList(l: PriceListRow) {
+    return {
+      id: l.id,
+      name: l.name,
+      currency: l.currency,
+      companyId: l.companyId,
+      locationId: l.locationId,
+      parentCompanyId: l.companyId,
+      entries: l.entries.map((e) => ({ id: e.id, variantId: e.variantId, price: e.price })),
+      createdAt: l.createdAt,
+      updatedAt: l.updatedAt,
+    }
+  }
+
+  private async priceListsFor(companyIds: string[]): Promise<PriceListRow[]> {
+    if (companyIds.length === 0) return []
+    return this.prisma.priceList.findMany({
+      where: { companyId: { in: companyIds } },
+      include: { entries: true },
+      orderBy: { createdAt: 'asc' },
+    })
+  }
+
+  private async decorateCompany(c: Record<string, unknown>, preloadedLists?: PriceListRow[]) {
     const stats = await this.statsFor(c.customerId as string)
-    return mapCompany(c, stats.totalSpent)
+    const lists = preloadedLists ?? (await this.priceListsFor([c.id as string]))
+    return { ...mapCompany(c, stats.totalSpent), priceLists: lists.map((l) => this.mapPriceList(l)) }
   }
 
   async company(id: string) {
@@ -146,11 +216,18 @@ export class CustomersService {
     return row ? this.decorateCompany(row as unknown as Record<string, unknown>) : null
   }
 
-  async companies(args: any) {
+  async companies(args: Record<string, unknown>) {
     let rows = (await this.prisma.company.findMany({ orderBy: { name: 'asc' } })) as unknown as Record<string, unknown>[]
-    rows = filterByQuery(rows, args.query, (r) => [r.name as string, (r.externalId as string) ?? ''])
-    const decorated = await Promise.all(rows.map((r) => this.decorateCompany(r)))
-    return toConnection(decorated, args.first, args.after, args.last, args.before)
+    rows = filterByQuery(rows, args.query as string | undefined, (r) => [r.name as string, (r.externalId as string) ?? ''])
+    const allLists = await this.priceListsFor(rows.map((r) => r.id as string))
+    const listsByCompany = new Map<string, PriceListRow[]>()
+    for (const l of allLists) {
+      const bucket = listsByCompany.get(l.companyId ?? '') ?? []
+      bucket.push(l)
+      listsByCompany.set(l.companyId ?? '', bucket)
+    }
+    const decorated = await Promise.all(rows.map((r) => this.decorateCompany(r, listsByCompany.get(r.id as string) ?? [])))
+    return toConnection(decorated, args.first as number | undefined, args.after as string | undefined, args.last as number | undefined, args.before as string | undefined)
   }
 
   async createCompany(input: Record<string, any>) {
@@ -212,6 +289,148 @@ export class CustomersService {
     contacts.push({ id: uid('cc'), name: contact.name, email: contact.email, phone: contact.phone ?? null, locationIds: locations.map((l) => l.id), isPrimary: contacts.length === 0 })
     await this.prisma.company.update({ where: { id }, data: { contacts: toJson(contacts) } })
     return this.decorateCompany({ ...c, contacts: toJson(contacts) } as unknown as Record<string, unknown>)
+  }
+
+  // price lists
+  async priceLists(companyId?: string): Promise<unknown[]> {
+    const rows = await this.prisma.priceList.findMany({
+      where: companyId ? { companyId } : undefined,
+      include: { entries: true },
+      orderBy: { createdAt: 'asc' },
+    })
+    return rows.map((r) => this.mapPriceList(r))
+  }
+
+  async priceList(id: string) {
+    const row = await this.prisma.priceList.findUnique({ where: { id }, include: { entries: true } })
+    return row ? this.mapPriceList(row) : null
+  }
+
+  private dedupeEntries(entries: { variantId: string; price: number }[] | undefined) {
+    const byVariant = new Map<string, { variantId: string; price: number }>()
+    for (const e of entries ?? []) {
+      if (typeof e.price !== 'number' || e.price < 0) throw new Error(`Invalid price for variant ${e.variantId}: must be a number >= 0`)
+      byVariant.set(e.variantId, { variantId: e.variantId, price: e.price }) // last entry per variant wins
+    }
+    return [...byVariant.values()]
+  }
+
+  async createPriceList(input: Record<string, any>) {
+    if (input.companyId && !(await this.prisma.company.findUnique({ where: { id: input.companyId } }))) {
+      throw new Error('Company not found')
+    }
+    const row = await this.prisma.priceList.create({
+      data: {
+        name: input.name,
+        currency: input.currency ?? 'USD',
+        companyId: input.companyId ?? null,
+        locationId: input.locationId ?? null,
+        entries: { create: this.dedupeEntries(input.entries) },
+      },
+      include: { entries: true },
+    })
+    return this.mapPriceList(row)
+  }
+
+  async updatePriceList(id: string, input: Record<string, any>) {
+    const existing = await this.prisma.priceList.findUnique({ where: { id } })
+    if (!existing) throw new Error('Price list not found')
+    if (input.companyId && !(await this.prisma.company.findUnique({ where: { id: input.companyId } }))) {
+      throw new Error('Company not found')
+    }
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.priceListEntry.deleteMany({ where: { priceListId: id } })
+      return tx.priceList.update({
+        where: { id },
+        data: {
+          name: input.name,
+          currency: input.currency ?? existing.currency,
+          companyId: input.companyId ?? null,
+          locationId: input.locationId ?? null,
+          entries: { create: this.dedupeEntries(input.entries) },
+        },
+        include: { entries: true },
+      })
+    })
+    return this.mapPriceList(row)
+  }
+
+  async deletePriceList(id: string) {
+    const existing = await this.prisma.priceList.findUnique({ where: { id } })
+    if (!existing) throw new Error('Price list not found')
+    await this.prisma.priceList.delete({ where: { id } })
+    return id
+  }
+
+  async sendAccountInviteEmail(id: string) {
+    const c = await this.prisma.customer.findUnique({ where: { id } })
+    if (!c) throw new Error('Customer not found')
+    if (!c.email) throw new Error('Customer has no email address')
+    await this.prisma.notification.create({
+      data: {
+        id: uid('notif'),
+        kind: 'customer',
+        title: 'Account Invitation',
+        body: `Account invitation sent to ${c.email}`,
+        link: `/customers/${c.id}`,
+      },
+    })
+    return this.customer(id)
+  }
+
+  async updateEmailConsent(ids: string[], consentState: string) {
+    if (!CONSENT_STATES[consentState]) throw new Error(`Invalid consent state: ${consentState}`)
+    const rows = await this.prisma.customer.findMany({ where: { id: { in: ids } } })
+    await this.prisma.customer.updateMany({
+      where: { id: { in: rows.map((r) => r.id) } },
+      data: { emailMarketingConsent: consentState },
+    })
+    return this.decorateCustomers(rows as unknown as Record<string, unknown>[])
+  }
+
+  async updateSmsConsent(ids: string[], consentState: string) {
+    if (!CONSENT_STATES[consentState]) throw new Error(`Invalid consent state: ${consentState}`)
+    const rows = await this.prisma.customer.findMany({ where: { id: { in: ids } } })
+    await this.prisma.customer.updateMany({
+      where: { id: { in: ids } },
+      data: { smsMarketingConsent: consentState },
+    })
+    const updated = rows.map((r) => ({ ...r, smsMarketingConsent: consentState }))
+    return this.decorateCustomers(updated as unknown as Record<string, unknown>[])
+  }
+
+  private async decorateCustomers(rows: Record<string, unknown>[]) {
+    const statsMap = new Map<string, Awaited<ReturnType<CustomersService['statsFor']>>>()
+    for (const r of rows) statsMap.set(r.id as string, await this.statsFor(r.id as string))
+    return this.decorate(rows, statsMap)
+  }
+
+  async mergeCustomers(primaryId: string, secondaryId: string) {
+    if (primaryId === secondaryId) throw new Error('Cannot merge a customer with itself')
+    const primary = await this.prisma.customer.findUnique({ where: { id: primaryId } })
+    const secondary = await this.prisma.customer.findUnique({ where: { id: secondaryId } })
+    if (!primary) throw new Error('Primary customer not found')
+    if (!secondary) throw new Error('Secondary customer not found')
+    await this.prisma.order.updateMany({ where: { customerId: secondaryId }, data: { customerId: primaryId } })
+    await this.prisma.giftCard.updateMany({ where: { customerId: secondaryId }, data: { customerId: primaryId } })
+    const tags = [
+      ...new Set([
+        ...parseJson<string[]>(primary.tags as string, []),
+        ...parseJson<string[]>(secondary.tags as string, []),
+      ]),
+    ]
+    const primaryAddresses = parseJson<Record<string, unknown>[]>(primary.addresses as string, [])
+    const secondaryAddresses = parseJson<Record<string, unknown>[]>(secondary.addresses as string, [])
+    const addressKey = (a: Record<string, unknown>) => `${a.address1 ?? ''}|${a.zip ?? ''}`
+    const primaryKeys = new Set(primaryAddresses.map(addressKey))
+    const addresses = [...primaryAddresses, ...secondaryAddresses.filter((a) => !primaryKeys.has(addressKey(a)))]
+    await this.prisma.customer.update({ where: { id: primaryId }, data: { tags: toJson(tags), addresses: toJson(addresses) } })
+    await this.prisma.customer.delete({ where: { id: secondaryId } })
+    return this.customer(primaryId)
+  }
+
+  async segmentsCount() {
+    return this.prisma.segment.count()
   }
 
   // segments
@@ -333,6 +552,26 @@ export class CustomersResolver {
   }
 
   @Query()
+  priceLists(@Args('companyId', { nullable: true }) companyId: string) {
+    return this.service.priceLists(companyId)
+  }
+
+  @Query()
+  priceList(@Args('id') id: string) {
+    return this.service.priceList(id)
+  }
+
+  @Query()
+  segmentsCount() {
+    return this.service.segmentsCount()
+  }
+
+  @Query()
+  customersCount(@Args('query', { nullable: true }) query?: string) {
+    return this.service.customersCount(query)
+  }
+
+  @Query()
   segments() {
     return this.service.segments()
   }
@@ -399,6 +638,42 @@ export class CustomersResolver {
   }
 
   @Mutation()
+  async customerSendAccountInviteEmail(@Args('id') id: string) {
+    try {
+      return { customer: await this.service.sendAccountInviteEmail(id), userErrors: [] }
+    } catch (e) {
+      return { customer: null, userErrors: [{ field: ['customer'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async customerEmailMarketingConsentUpdate(@Args('ids') ids: string[], @Args('consentState') consentState: string) {
+    try {
+      return { customers: await this.service.updateEmailConsent(ids, consentState), userErrors: [] }
+    } catch (e) {
+      return { customers: [], userErrors: [{ field: ['consentState'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async customerSmsMarketingConsentUpdate(@Args('ids') ids: string[], @Args('consentState') consentState: string) {
+    try {
+      return { customers: await this.service.updateSmsConsent(ids, consentState), userErrors: [] }
+    } catch (e) {
+      return { customers: [], userErrors: [{ field: ['consentState'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async customerMerge(@Args('primaryId') primaryId: string, @Args('secondaryId') secondaryId: string) {
+    try {
+      return { customer: await this.service.mergeCustomers(primaryId, secondaryId), userErrors: [] }
+    } catch (e) {
+      return { customer: null, userErrors: [{ field: ['customer'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
   async companyCreate(@Args('company') company: Record<string, any>) {
     try {
       return { company: await this.service.createCompany(company), userErrors: [] }
@@ -436,6 +711,33 @@ export class CustomersResolver {
       return { company: await this.service.addCompanyContact(id, contact), userErrors: [] }
     } catch (e) {
       return { company: null, userErrors: [{ field: ['contact'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async priceListCreate(@Args('input') input: Record<string, any>) {
+    try {
+      return { priceList: await this.service.createPriceList(input), userErrors: [] }
+    } catch (e) {
+      return { priceList: null, userErrors: [{ field: ['input'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async priceListUpdate(@Args('id') id: string, @Args('input') input: Record<string, any>) {
+    try {
+      return { priceList: await this.service.updatePriceList(id, input), userErrors: [] }
+    } catch (e) {
+      return { priceList: null, userErrors: [{ field: ['input'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async priceListDelete(@Args('id') id: string) {
+    try {
+      return { deletedId: await this.service.deletePriceList(id), userErrors: [] }
+    } catch (e) {
+      return { deletedId: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
     }
   }
 

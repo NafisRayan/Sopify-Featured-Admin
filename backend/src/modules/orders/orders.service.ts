@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
+import { b2bPricing } from '../customers/customers.module'
 import { Discount as DiscountRow, GiftCard as GiftCardRow } from '@prisma/client'
 import { mapOrder, mapReturn, mapOrderRisk, mapCustomer } from '../../common/mappers'
 import { uid, roundMoney } from '../../common/ids'
@@ -55,6 +56,7 @@ export class OrdersService {
     return rows.map((o) => {
       const gateway = (o.paymentGateway as string) ?? 'manual'
       const mapped = mapOrder(o, mapOrderRisk(riskMap.get(o.id as string)))
+      mapped.fulfillments = parseJson<Record<string, unknown>[]>(mapped.fulfillments as string, []).map((f) => ({ ...f, events: (f.events as unknown[]) ?? [] }))
       mapped.transactions = (txnMap.get(o.id as string) ?? []).map((t) => ({
         id: t.id,
         createdAt: t.at,
@@ -95,6 +97,75 @@ export class OrdersService {
     rows = filterByQuery(rows, args.query, (r) => [r.name as string, r.email as string])
     const decorated = await this.decorateOrders(rows)
     return toConnection(decorated, args.first, args.after, args.last, args.before)
+  }
+
+  async ordersCount(query?: string, status?: string): Promise<number> {
+    let rows = (await this.prisma.order.findMany({ where: status ? { status } : undefined })) as unknown as Record<string, unknown>[]
+    rows = rows.filter((r) => !r.isDraft)
+    rows = filterByQuery(rows, query, (r) => {
+      const items = parseJson<{ title?: string; sku?: string }[]>(r.lineItems as string, [])
+      return [r.name as string, r.email as string, items.map((i) => i.sku ?? '').join(' '), items.map((i) => i.title ?? '').join(' ')]
+    })
+    return rows.length
+  }
+
+  async draftOrdersCount(query?: string): Promise<number> {
+    const rows = (await this.prisma.order.findMany({ where: { isDraft: true } })) as unknown as Record<string, unknown>[]
+    return filterByQuery(rows, query, (r) => [r.name as string, r.email as string]).length
+  }
+
+  async analytics(from: Date, to: Date): Promise<any> {
+    const rows = await this.prisma.order.findMany({
+      where: { createdAt: { gte: from, lte: to }, isDraft: false },
+    })
+    const ordersCount = rows.length
+    let grossSales = 0
+    let discounts = 0
+    let refunds = 0
+    let shipping = 0
+    let taxes = 0
+    let giftCardSales = 0
+    const productAgg = new Map<string, { productId: string; title: string; units: number; revenue: number }>()
+    for (const o of rows) {
+      const discount = parseJson<{ amount?: number } | null>(o.discountCode as string, null)?.amount ?? 0
+      const refundList = parseJson<{ amount: number }[]>(o.refunds as string, [])
+      const gift = parseJson<{ amount?: number } | null>(o.giftCard as string, null)?.amount ?? 0
+      grossSales += o.subtotal + o.shippingPrice
+      discounts += discount
+      refunds += refundList.reduce((s, r) => s + r.amount, 0)
+      shipping += o.shippingPrice
+      taxes += o.taxTotal
+      giftCardSales += gift
+      for (const li of parseJson<{ productId: string; title?: string; quantity: number; price: number }[]>(o.lineItems as string, [])) {
+        const agg = productAgg.get(li.productId) ?? { productId: li.productId, title: li.title ?? '', units: 0, revenue: 0 }
+        agg.units += li.quantity
+        agg.revenue += li.price * li.quantity
+        productAgg.set(li.productId, agg)
+      }
+    }
+    const allOrders = await this.prisma.order.findMany({ where: { isDraft: false }, select: { customerId: true } })
+    const orderCounts = new Map<string, number>()
+    for (const o of allOrders) orderCounts.set(o.customerId, (orderCounts.get(o.customerId) ?? 0) + 1)
+    const returning = rows.filter((o) => (orderCounts.get(o.customerId) ?? 0) > 1).length
+    const netSales = roundMoney(grossSales - discounts - refunds)
+    return {
+      from,
+      to,
+      grossSales: roundMoney(grossSales),
+      discounts: roundMoney(discounts),
+      refunds: roundMoney(refunds),
+      netSales,
+      shipping: roundMoney(shipping),
+      taxes: roundMoney(taxes),
+      giftCardSales: roundMoney(giftCardSales),
+      ordersCount,
+      avgOrderValue: ordersCount > 0 ? roundMoney(netSales / ordersCount) : 0,
+      returningCustomerRate: ordersCount > 0 ? Math.round((returning / ordersCount) * 1000) / 10 : 0,
+      topProducts: [...productAgg.values()]
+        .map((p) => ({ ...p, revenue: roundMoney(p.revenue) }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 5),
+    }
   }
 
   async abandonedCheckouts(first: number) {
@@ -469,8 +540,11 @@ export class OrdersService {
     if (order.status === 'closed') throw new Error('Cannot fulfill a closed order')
     if (order.paymentStatus === 'refunded') throw new Error('Cannot fulfill a refunded order')
     if (order.fulfillmentStatus === 'fulfilled') throw new Error('Order is already fulfilled')
+    if (!Array.isArray(input.lineItemIds) || input.lineItemIds.length === 0) {
+      throw new Error('At least one line item is required to fulfill')
+    }
     const lineItems = parseJson<{ id: string; variantId: string; quantity: number }[]>(order.lineItems as string, [])
-    const fulfillments = parseJson<{ id: string; createdAt: string; lineItemIds: string[]; trackingNumber?: string; carrier?: string; locationId: string; status: string }[]>(order.fulfillments as string, [])
+    const fulfillments = parseJson<{ id: string; createdAt: string; lineItemIds: string[]; trackingNumber?: string; carrier?: string; locationId: string; status: string; events?: { id: string; status: string; message?: string; occurredAt: string }[] }[]>(order.fulfillments as string, [])
     const alreadyFulfilled = new Set(fulfillments.flatMap((f) => f.lineItemIds))
     for (const lid of input.lineItemIds) {
       if (alreadyFulfilled.has(lid)) throw new Error(`Line item ${lid} is already fulfilled`)
@@ -492,6 +566,7 @@ export class OrdersService {
       carrier: input.carrier || undefined,
       locationId: input.locationId,
       status: 'success',
+      events: [],
     })
     const newFulfillmentStatus = this.recomputeFulfillmentStatus({ lineItems: lineItems as never, fulfillments: fulfillments as never })
     const data: Record<string, unknown> = { fulfillments: toJson(fulfillments), fulfillmentStatus: newFulfillmentStatus }
@@ -509,6 +584,82 @@ export class OrdersService {
       `${qty} item(s) fulfilled from ${location?.name ?? 'default location'}${tracking}${input.notifyCustomer ? ' · Customer notified' : ''}`,
     )
     await this.logActivity('Fulfilled order', 'order', order.id)
+    return this.order(order.id)
+  }
+
+  private static readonly fulfillmentEventStatuses: Record<string, true> = {
+    LABEL_PRINTED: true,
+    CONFIRMED: true,
+    IN_TRANSIT: true,
+    OUT_FOR_DELIVERY: true,
+    DELIVERED: true,
+    FAILURE: true,
+  }
+
+  async fulfillmentCancel(fulfillmentId: string): Promise<any> {
+    const order = await this.prisma.order.findFirst({
+      where: { fulfillments: { array_contains: [{ id: fulfillmentId }] } },
+    })
+    if (!order) throw new Error('Fulfillment not found')
+    if (order.isDraft) throw new Error('Cannot cancel a fulfillment on a draft order')
+    if (order.status === 'cancelled') throw new Error('Cannot cancel a fulfillment on a cancelled order')
+    const fulfillments = parseJson<{ id: string; createdAt: string; lineItemIds: string[]; trackingNumber?: string; carrier?: string; locationId: string; status: string }[]>(order.fulfillments as string, [])
+    const index = fulfillments.findIndex((f) => f.id === fulfillmentId)
+    if (index < 0) throw new Error('Fulfillment not found')
+    const fulfillment = fulfillments[index]!
+    const lineItems = parseJson<{ id: string; variantId: string; quantity: number }[]>(order.lineItems as string, [])
+
+    // Reverse stock: inverse of consumeForFulfill — increment available at the ship-from location.
+    for (const lid of fulfillment.lineItemIds) {
+      const li = lineItems.find((x) => x.id === lid)
+      if (!li) continue
+      const level = await this.prisma.inventoryLevel.findUnique({
+        where: { variantId_locationId: { variantId: li.variantId, locationId: fulfillment.locationId } },
+      })
+      if (!level) continue
+      const newAvail = level.available + li.quantity
+      await this.prisma.inventoryLevel.update({
+        where: { variantId_locationId: { variantId: level.variantId, locationId: level.locationId } },
+        data: { available: newAvail },
+      })
+      await this.prisma.inventoryHistory.create({
+        data: {
+          id: uid('ih'), variantId: level.variantId, locationId: level.locationId,
+          change: li.quantity, resultingAvailable: newAvail, reason: 'fulfillment_cancelled',
+          createdAt: new Date(), author: actorName(),
+        },
+      })
+    }
+
+    fulfillments.splice(index, 1)
+    const newFulfillmentStatus = this.recomputeFulfillmentStatus({ lineItems: lineItems as never, fulfillments: fulfillments as never })
+    const data: Record<string, unknown> = { fulfillments: toJson(fulfillments), fulfillmentStatus: newFulfillmentStatus }
+    if (order.status === 'closed' && newFulfillmentStatus !== 'fulfilled') {
+      data.status = 'open'
+      data.closedAt = null
+    }
+    await this.prisma.order.update({ where: { id: order.id }, data })
+    await this.addTimeline(order.id, 'fulfillment', `Fulfillment cancelled — ${fulfillment.lineItemIds.length} item(s) restocked`)
+    await this.logActivity('Cancelled fulfillment', 'order', order.id)
+    return this.order(order.id)
+  }
+
+  async fulfillmentEventCreate(fulfillmentId: string, status: string, message?: string): Promise<any> {
+    if (!OrdersService.fulfillmentEventStatuses[status]) {
+      throw new Error(`Invalid fulfillment event status ${status}`)
+    }
+    const order = await this.prisma.order.findFirst({
+      where: { fulfillments: { array_contains: [{ id: fulfillmentId }] } },
+    })
+    if (!order) throw new Error('Fulfillment not found')
+    const fulfillments = parseJson<{ id: string; lineItemIds: string[]; events?: { id: string; status: string; message: string | null; occurredAt: string }[] }[]>(order.fulfillments as string, [])
+    const fulfillment = fulfillments.find((f) => f.id === fulfillmentId)
+    if (!fulfillment) throw new Error('Fulfillment not found')
+    fulfillment.events = fulfillment.events ?? []
+    fulfillment.events.push({ id: uid('fe'), status, message: message ?? null, occurredAt: new Date().toISOString() })
+    await this.prisma.order.update({ where: { id: order.id }, data: { fulfillments: toJson(fulfillments) } })
+    await this.addTimeline(order.id, 'fulfillment', `Fulfillment event ${status}${message ? ` — ${message}` : ''}`)
+    await this.logActivity('Added fulfillment event', 'order', order.id)
     return this.order(order.id)
   }
 
@@ -667,8 +818,7 @@ export class OrdersService {
     }
     if (projected.length === 0) throw new Error('An order needs at least one item')
 
-    const company = await this.prisma.company.findFirst({ where: { customerId: order.customerId } })
-    const priceMultiplier = company && company.priceListDiscountPercent > 0 ? Math.max(0, 1 - company.priceListDiscountPercent / 100) : 1
+    const b2b = new Map<string, { fixedPrice: number | null; discountPercent: number }>()
 
     for (const add of added) {
       const variantProduct = await this.prisma.product.findFirst({
@@ -697,7 +847,13 @@ export class OrdersService {
       const variants = parseJson<Record<string, any>[]>(variantProduct.variants as string, [])
       const variant = variants.find((v) => v.id === add.variantId)
       if (!variant) throw new Error('Variant no longer exists')
-
+      const pricing =
+        b2b.get(add.variantId) ??
+        (await (async () => {
+          const p = await b2bPricing(this.prisma, order.customerId, add.variantId)
+          b2b.set(add.variantId, p)
+          return p
+        })())
       await this.reserveQuantity(add.variantId, add.quantity, `Order edit addition ${order.name}`)
 
       const existing = lineItems.find((li) => li.variantId === add.variantId)
@@ -712,9 +868,11 @@ export class OrdersService {
           variantTitle: variant.title === 'Default Title' ? '' : variant.title,
           sku: variant.sku,
           quantity: add.quantity,
-          price: roundMoney(variant.price * priceMultiplier),
+          price: pricing.fixedPrice != null
+            ? roundMoney(pricing.fixedPrice)
+            : roundMoney(variant.price * Math.max(0, 1 - pricing.discountPercent / 100)),
           totalDiscount: 0,
-          requiresShipping: true,
+          requiresShipping: variantProduct.requiresShipping,
           imageSrc: parseJson<{ src?: string }[]>(variantProduct.media as string, [])[0]?.src,
         })
       }
@@ -733,9 +891,11 @@ export class OrdersService {
     })
     const total = roundMoney(Math.max(0, subtotal - discountAmount) + order.shippingPrice + taxTotal)
     const delta = roundMoney(total - order.total)
+    const orderFulfillments = parseJson<{ lineItemIds: string[] }[]>(order.fulfillments as string, [])
+    const fulfillmentStatus = this.recomputeFulfillmentStatus({ lineItems: lineItems as never, fulfillments: orderFulfillments as never })
     await this.prisma.order.update({
       where: { id },
-      data: { lineItems: toJson(lineItems), subtotal, taxTotal, total },
+      data: { lineItems: toJson(lineItems), subtotal, taxTotal, total, fulfillmentStatus },
     })
     await this.prisma.orderEdit.create({
       data: {
@@ -756,10 +916,20 @@ export class OrdersService {
     return this.order(id)
   }
 
-  // returns
+  private static readonly legacyReturnStatuses: Record<string, string> = {
+    open: 'requested',
+    returned: 'complete',
+    cancelled: 'canceled',
+  }
+
+  private decorateReturn(row: Record<string, unknown>): Record<string, unknown> {
+    const status = row.status as string
+    return mapReturn({ ...row, status: OrdersService.legacyReturnStatuses[status] ?? status })
+  }
+
   async returnsForOrder(orderId: string) {
     const rows = await this.prisma.returnRecord.findMany({ where: { orderId }, orderBy: { createdAt: 'desc' } })
-    return rows.map(mapReturn)
+    return rows.map((r) => this.decorateReturn(r as unknown as Record<string, unknown>))
   }
 
   async createReturn(input: any): Promise<any> {
@@ -776,7 +946,7 @@ export class OrdersService {
       data: {
         id: uid('ret'),
         orderId: input.orderId,
-        status: 'open',
+        status: 'requested',
         lines: toJson(input.lines),
         reason: input.reason,
         restock: input.restock ?? true,
@@ -785,12 +955,53 @@ export class OrdersService {
     })
     await this.addTimeline(input.orderId, 'refund', `Return requested for ${input.lines.reduce((s: number, l: any) => s + l.quantity, 0)} item(s) (${input.reason})`)
     await this.logActivity('Created return', 'order', input.orderId)
-    return mapReturn(record as unknown as Record<string, unknown>)
+    return this.decorateReturn(record as unknown as Record<string, unknown>)
+  }
+
+  async approveReturn(id: string): Promise<any> {
+    const ret = await this.prisma.returnRecord.findUnique({ where: { id } })
+    if (!ret) throw new Error('Return not found')
+    if (ret.status !== 'requested' && ret.status !== 'open') throw new Error('Only requested returns can be approved')
+    const updated = await this.prisma.returnRecord.update({ where: { id }, data: { status: 'approved' } })
+    await this.addTimeline(ret.orderId, 'edit', 'Return approved')
+    await this.logActivity('Approved return', 'order', ret.orderId)
+    return this.decorateReturn(updated as unknown as Record<string, unknown>)
+  }
+
+  async declineReturn(id: string, reason?: string): Promise<any> {
+    const ret = await this.prisma.returnRecord.findUnique({ where: { id } })
+    if (!ret) throw new Error('Return not found')
+    if (!['requested', 'approved', 'open'].includes(ret.status)) {
+      throw new Error('Only requested or approved returns can be declined')
+    }
+    const updated = await this.prisma.returnRecord.update({
+      where: { id },
+      data: { status: 'declined', ...(reason !== undefined && reason !== null ? { reason } : {}) },
+    })
+    await this.addTimeline(ret.orderId, 'refund', `Return declined${reason ? ` — ${reason}` : ''}`)
+    await this.logActivity('Declined return', 'order', ret.orderId)
+    return this.decorateReturn(updated as unknown as Record<string, unknown>)
+  }
+
+  async cancelReturn(id: string): Promise<any> {
+    const ret = await this.prisma.returnRecord.findUnique({ where: { id } })
+    if (!ret) throw new Error('Return not found')
+    if (['canceled', 'cancelled', 'complete', 'returned'].includes(ret.status)) {
+      throw new Error('Return is already canceled or closed')
+    }
+    const updated = await this.prisma.returnRecord.update({ where: { id }, data: { status: 'canceled' } })
+    await this.addTimeline(ret.orderId, 'edit', 'Return canceled')
+    await this.logActivity('Canceled return', 'order', ret.orderId)
+    return this.decorateReturn(updated as unknown as Record<string, unknown>)
   }
 
   async closeReturn(id: string, markRefunded: boolean): Promise<any> {
     const ret = await this.prisma.returnRecord.findUnique({ where: { id } })
-    if (!ret || ret.status !== 'open') throw new Error('Return not found or already closed')
+    if (!ret) throw new Error('Return not found')
+    if (['declined', 'canceled', 'cancelled'].includes(ret.status)) {
+      throw new Error('Cannot close a declined or canceled return')
+    }
+    if (['complete', 'returned'].includes(ret.status)) throw new Error('Return already closed')
     const order = await this.prisma.order.findUnique({ where: { id: ret.orderId } })
     if (!order) throw new Error('Order not found')
     const lines = parseJson<{ lineItemId: string; quantity: number }[]>(ret.lines as string, [])
@@ -899,7 +1110,7 @@ export class OrdersService {
     }
     await this.prisma.order.update({ where: { id: order.id }, data: orderUpdate })
 
-    await this.prisma.returnRecord.update({ where: { id }, data: { status: 'returned', closedAt: new Date() } })
+    await this.prisma.returnRecord.update({ where: { id }, data: { status: 'complete', closedAt: new Date() } })
     await this.addTimeline(
       order.id,
       'refund',
@@ -907,7 +1118,7 @@ export class OrdersService {
     )
     await this.logActivity('Closed return', 'order', order.id)
     const updated: any = await this.prisma.returnRecord.findUnique({ where: { id } })
-    return mapReturn(updated)
+    return this.decorateReturn(updated)
   }
 
   // abandoned checkouts
@@ -983,16 +1194,14 @@ export class OrdersService {
     const customer = await this.prisma.customer.findUnique({ where: { id: input.customerId } })
     if (!customer) throw new Error('Select a customer')
 
-    const company = await this.prisma.company.findFirst({ where: { customerId: customer.id } })
-    const priceMultiplier = company && company.priceListDiscountPercent > 0 ? Math.max(0, 1 - company.priceListDiscountPercent / 100) : 1
-
     const lineItems: Record<string, unknown>[] = []
     for (const li of input.items) {
       const product = await this.prisma.product.findFirst({ where: { variants: { array_contains: [{ id: li.variantId }] } } })
       if (!product) throw new Error('Invalid variant in draft')
       const variant = parseJson<Record<string, any>[]>(product.variants as string, []).find((v) => v.id === li.variantId)
       if (!variant) throw new Error('Invalid variant')
-      const unitPrice = roundMoney(variant.price * priceMultiplier)
+      const { fixedPrice, discountPercent } = await b2bPricing(this.prisma, customer.id, li.variantId)
+      const unitPrice = fixedPrice != null ? roundMoney(fixedPrice) : roundMoney(variant.price * Math.max(0, 1 - discountPercent / 100))
       lineItems.push({
         id: uid('li'),
         productId: product.id,
@@ -1003,7 +1212,7 @@ export class OrdersService {
         quantity: li.quantity,
         price: unitPrice,
         totalDiscount: 0,
-        requiresShipping: true,
+        requiresShipping: product.requiresShipping,
         imageSrc: parseJson<{ src?: string }[]>(product.media as string, [])[0]?.src,
       })
     }
@@ -1165,6 +1374,7 @@ export class OrdersService {
   async createDraft(input: any): Promise<any> {
     const computed = await this.buildDraftComputation(input)
     const { customer, lineItems, addr, subtotal, taxTotal, discountCodeObj, giftCardObj, shippingPrice, total } = computed
+    const fulfillmentStatus = this.recomputeFulfillmentStatus({ lineItems: lineItems as never, fulfillments: [] })
     const now = new Date()
     const order = await this.prisma.order.create({
       data: {
@@ -1174,7 +1384,7 @@ export class OrdersService {
         email: customer.email,
         createdAt: now,
         paymentStatus: 'unpaid',
-        fulfillmentStatus: 'unfulfilled',
+        fulfillmentStatus,
         status: 'draft',
         channel: 'Online Store',
         lineItems: toJson(lineItems),
@@ -1205,6 +1415,8 @@ export class OrdersService {
     if (!existing || !existing.isDraft) throw new Error('Draft not found')
     const computed = await this.buildDraftComputation(input)
     const { customer, lineItems, addr, subtotal, taxTotal, discountCodeObj, giftCardObj, shippingPrice, total } = computed
+    const existingFulfillments = parseJson<{ lineItemIds: string[] }[]>(existing.fulfillments as string, [])
+    const fulfillmentStatus = this.recomputeFulfillmentStatus({ lineItems: lineItems as never, fulfillments: existingFulfillments as never })
     await this.prisma.order.update({
       where: { id },
       data: {
@@ -1212,6 +1424,7 @@ export class OrdersService {
         subtotal,
         taxTotal,
         total,
+        fulfillmentStatus,
         customerId: customer.id,
         email: customer.email,
         shippingAddress: toJson(addr),
@@ -1235,7 +1448,7 @@ export class OrdersService {
   async convertDraft(id: string): Promise<any> {
     const draft = await this.prisma.order.findUnique({ where: { id } })
     if (!draft || !draft.isDraft) throw new Error('Draft not found')
-    const lineItems = parseJson<{ id: string; variantId: string; quantity: number }[]>(draft.lineItems as string, [])
+    const lineItems = parseJson<{ id: string; variantId: string; quantity: number; requiresShipping?: boolean }[]>(draft.lineItems as string, [])
 
     // Pre-checks: discount and gift card must be validated BEFORE any stock is reserved
     // to guarantee the no-partial-commit invariant.
@@ -1302,13 +1515,18 @@ export class OrdersService {
       bornPaid = appliedGift >= draft.total - 0.01
       await this.addTimeline(id, 'payment', `Gift card ${validatedCard.code} applied — $${appliedGift.toFixed(2)}`)
     }
+    const draftFulfillments = parseJson<{ lineItemIds: string[] }[]>(draft.fulfillments as string, [])
+    const fulfillmentStatus = this.recomputeFulfillmentStatus({
+      fulfillments: draftFulfillments as never,
+      lineItems: lineItems.map((li) => ({ ...li, requiresShipping: li.requiresShipping ?? true })) as never,
+    })
     const next = await this.allocateOrderNumber()
-
     await this.prisma.order.update({
       where: { id },
       data: {
         name: `#${next}`,
         status: 'open',
+        fulfillmentStatus,
         isDraft: false,
         paymentStatus: bornPaid ? 'paid' : 'pending',
         giftCard: appliedGift > 0 ? toJson({ code: validatedCard!.code, amount: appliedGift }) : null,
@@ -1326,6 +1544,58 @@ export class OrdersService {
     await this.addTimeline(id, 'note', `Invoice emailed to ${draft.email}`)
     await this.logActivity('Sent draft invoice', 'order', id)
     return this.order(id)
+  }
+
+  private async cloneToDraft(source: Record<string, any>, timelineMessage: string): Promise<any> {
+    const now = new Date()
+    const lineItems = parseJson<Record<string, unknown>[]>(source.lineItems as string, [])
+    const order = await this.prisma.order.create({
+      data: {
+        id: uid('o'),
+        name: `#D${Math.floor(Math.random() * 900 + 100)}`,
+        customerId: source.customerId,
+        email: source.email,
+        createdAt: now,
+        paymentStatus: 'pending',
+        fulfillmentStatus: 'unfulfilled',
+        status: 'draft',
+        channel: source.channel,
+        lineItems: toJson(lineItems),
+        shippingAddress: source.shippingAddress,
+        billingAddress: source.billingAddress,
+        shippingTitle: source.shippingTitle,
+        shippingPrice: source.shippingPrice,
+        subtotal: source.subtotal,
+        taxTotal: source.taxTotal,
+        total: source.total,
+        discountCode: source.discountCode,
+        currency: source.currency,
+        tags: source.tags,
+        note: source.note,
+        timeline: toJson([{ id: uid('ev'), createdAt: now.toISOString(), type: 'created', message: timelineMessage, author: actorName() }]),
+        fulfillments: toJson([]),
+        refunds: toJson([]),
+        isDraft: true,
+      },
+    })
+    return this.order(order.id)
+  }
+
+  async draftOrderCreateFromOrder(orderId: string): Promise<any> {
+    const source = await this.prisma.order.findUnique({ where: { id: orderId } })
+    if (!source) throw new Error('Order not found')
+    if (source.isDraft) throw new Error('Order is already a draft')
+    const draft = await this.cloneToDraft(source, `Draft created from order ${source.name}`)
+    await this.logActivity('Created draft from order', 'order', draft.id)
+    return draft
+  }
+
+  async draftOrderDuplicate(id: string): Promise<any> {
+    const source = await this.prisma.order.findUnique({ where: { id } })
+    if (!source || !source.isDraft) throw new Error('Draft not found')
+    const draft = await this.cloneToDraft(source, `Draft duplicated from ${source.name}`)
+    await this.logActivity('Duplicated draft order', 'order', draft.id)
+    return draft
   }
 }
 

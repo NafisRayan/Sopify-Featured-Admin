@@ -28,6 +28,8 @@ import { currentStaff } from '../../auth/staff-context'
 
 import { OrdersService } from '../orders/orders.service'
 import { OrdersModule } from '../orders/orders.module'
+import { reseed } from '../../seed/seed-core'
+import { ensurePayouts } from '../finances/finances.module'
 // Consolidated store/content/metafields/staff/system module.
 // Pages, blog posts, files, menus, redirects, metaobjects, metafields,
 // staff, activity, notifications, tasks, apps, settings, theme, locales,
@@ -378,7 +380,11 @@ export class StoreContentService {
     return { id: 'singleton', storeName: value.storeName ?? '', legalName: value.legalName ?? '', email: value.email ?? '', phone: value.phone ?? '', currency: value.currency ?? 'USD', timezone: value.timezone ?? '', value }
   }
   async updateSettings(value: Record<string, any>) {
-    await this.prisma.storeSettings.upsert({ where: { id: 'singleton' }, create: { id: 'singleton', value: toJson(value) }, update: { value: toJson(value) } })
+    // Shallow merge: partial updates must not wipe unrelated settings keys
+    // (policies, domains, payouts, shipping, taxes…).
+    const current = parseJson<Record<string, any>>((await this.prisma.storeSettings.findUnique({ where: { id: 'singleton' } }))?.value as string, {})
+    const merged = { ...current, ...value }
+    await this.prisma.storeSettings.upsert({ where: { id: 'singleton' }, create: { id: 'singleton', value: toJson(merged) }, update: { value: toJson(merged) } })
     return this.settingsSingleton()
   }
   async theme() {
@@ -446,9 +452,173 @@ export class StoreContentService {
     return { id: 'singleton', name: settings.storeName, email: settings.email, currency: settings.currency, plan }
   }
 
+  // shop policies / domains / saved searches / counts
+  async shopPolicies(): Promise<Record<string, unknown>> {
+    const settings = await this.settingsSingleton()
+    return parseJson<Record<string, unknown>>(settings.value?.policies as string, {})
+  }
+  async domains(): Promise<Record<string, any>[]> {
+    const settings = await this.settingsSingleton()
+    return parseJson<Record<string, any>[]>(settings.value?.domains as string, [])
+  }
+  async savedSearches(resourceType?: string) {
+    if (resourceType) {
+      return this.prisma.savedSearch.findMany({ where: { resourceType }, orderBy: { createdAt: 'desc' } })
+    }
+    return this.prisma.savedSearch.findMany({ orderBy: { createdAt: 'desc' } })
+  }
+  async pagesCount() {
+    return this.prisma.storePage.count()
+  }
+  async blogPostsCount() {
+    return this.prisma.blogPost.count()
+  }
+  async redirectsCount() {
+    return this.prisma.redirect.count()
+  }
+  async currentStaffMember() {
+    const session = currentStaff()
+    if (!session) return null
+    const member = await this.prisma.staffMember.findUnique({ where: { id: session.id } })
+    return member ? { ...member, permissions: parseJson(member.permissions as string, {}) } : null
+  }
+
+  async shopPolicyUpdate(policy: string, body: string) {
+    const policies: Record<string, string> = { refund: 'Refund policy', privacy: 'Privacy policy', terms: 'Terms of service', shipping: 'Shipping policy', subscriber: 'Subscriber policy' }
+    if (!(policy in policies)) throw new Error(`Unknown policy: ${policy}`)
+    const settings = await this.settingsSingleton()
+    const value = { ...settings.value }
+    const existing = parseJson<Record<string, unknown>>(value.policies as unknown as string, {})
+    value.policies = { ...existing, [policy]: body }
+    return this.updateSettings({ ...value, policies: value.policies })
+  }
+
+  async domainAdd(host: string) {
+    const normalized = host.trim().toLowerCase()
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(normalized)) {
+      throw new Error('Invalid hostname')
+    }
+    const domains = await this.domains()
+    if (domains.some((d) => d.host === normalized)) throw new Error('This domain is already connected')
+    domains.push({ host: normalized, primary: false, sslEnabled: false, verificationStatus: 'pending', createdAt: new Date().toISOString() })
+    const settings = await this.settingsSingleton()
+    await this.updateSettings({ ...settings.value, domains })
+    return this.domains()
+  }
+
+  async domainSetPrimary(host: string) {
+    const domains = await this.domains()
+    if (!domains.some((d) => d.host === host)) throw new Error('Domain not found')
+    for (const d of domains) d.primary = d.host === host
+    const settings = await this.settingsSingleton()
+    await this.updateSettings({ ...settings.value, domains })
+    return this.domains()
+  }
+
+  async domainDelete(host: string) {
+    const domains = await this.domains()
+    const target = domains.find((d) => d.host === host)
+    if (!target) throw new Error('Domain not found')
+    if (target.primary && domains.length > 1) throw new Error('The primary domain cannot be deleted while other domains exist')
+    const remaining = domains.filter((d) => d.host !== host)
+    const settings = await this.settingsSingleton()
+    await this.updateSettings({ ...settings.value, domains: remaining })
+    return this.domains()
+  }
+
+  async localeUpdate(code: string, name: string) {
+    if (!(await this.prisma.locale.findUnique({ where: { code } }))) throw new Error('Locale not found')
+    await this.prisma.locale.update({ where: { code }, data: { name } })
+    return this.settingsSingleton()
+  }
+
+  async marketCreate(code: string, name?: string, currency?: string) {
+    if (await this.prisma.marketCountry.findUnique({ where: { code } })) throw new Error('A market with this code already exists')
+    return this.prisma.marketCountry.create({
+      data: { code, name: name || code, currency: currency || 'USD', priceAdjustmentPercent: 0, enabled: false },
+    })
+  }
+  async marketDelete(code: string): Promise<string[]> {
+    if (!(await this.prisma.marketCountry.findUnique({ where: { code } }))) throw new Error('Market not found')
+    await this.prisma.marketCountry.delete({ where: { code } })
+    return [code]
+  }
+
+  async metaobjectDefinitionCreate(definition: Record<string, any>) {
+    if (!definition.name?.trim() || !Array.isArray(definition.fields) || definition.fields.length === 0) {
+      throw new Error('Name and at least one field are required')
+    }
+    const row = await this.prisma.metaobjectDefinition.create({
+      data: { id: uid('mod'), name: definition.name.trim(), fields: toJson(definition.fields) },
+    })
+    return { ...row, fields: parseJson(row.fields as string, []) }
+  }
+  async metaobjectDefinitionUpdate(id: string, definition: Record<string, any>) {
+    if (!(await this.prisma.metaobjectDefinition.findUnique({ where: { id } }))) throw new Error('Definition not found')
+    const data: Record<string, unknown> = {}
+    if (definition.name !== undefined) data.name = definition.name
+    if (definition.fields !== undefined) data.fields = toJson(definition.fields)
+    await this.prisma.metaobjectDefinition.update({ where: { id }, data })
+    const row = await this.prisma.metaobjectDefinition.findUnique({ where: { id } })
+    return { ...row!, fields: parseJson(row!.fields as string, []) }
+  }
+  async metaobjectDefinitionDelete(id: string): Promise<string[]> {
+    if (!(await this.prisma.metaobjectDefinition.findUnique({ where: { id } }))) throw new Error('Definition not found')
+    const entries = await this.prisma.metaobjectEntry.count({ where: { definitionId: id } })
+    if (entries > 0) throw new Error('Cannot delete a definition that has entries')
+    await this.prisma.metaobjectDefinition.delete({ where: { id } })
+    return [id]
+  }
+
+  async metafieldDefinitionUpdate(id: string, definition: Record<string, any>) {
+    if (!(await this.prisma.metafieldDefinition.findUnique({ where: { id } }))) throw new Error('Definition not found')
+    const data: Record<string, unknown> = {}
+    for (const key of ['namespace', 'key', 'name', 'type', 'description', 'resourceType']) {
+      if (definition[key] !== undefined) data[key] = definition[key]
+    }
+    await this.prisma.metafieldDefinition.update({ where: { id }, data })
+    return this.prisma.metafieldDefinition.findUnique({ where: { id } })
+  }
+  async metafieldsDelete(ids: string[]): Promise<string[]> {
+    await this.prisma.metafield.deleteMany({ where: { id: { in: ids } } })
+    return ids
+  }
+
+  async createSavedSearch(input: Record<string, any>) {
+    if (!input.name?.trim() || !input.resourceType?.trim()) throw new Error('Name and resource type are required')
+    return this.prisma.savedSearch.create({
+      data: { name: input.name.trim(), resourceType: input.resourceType, query: input.query ?? '' },
+    })
+  }
+  async updateSavedSearch(id: string, input: Record<string, any>) {
+    if (!(await this.prisma.savedSearch.findUnique({ where: { id } }))) throw new Error('Saved search not found')
+    const data: Record<string, unknown> = {}
+    for (const key of ['name', 'resourceType', 'query']) if (input[key] !== undefined) data[key] = input[key]
+    await this.prisma.savedSearch.update({ where: { id }, data })
+    return this.prisma.savedSearch.findUnique({ where: { id } })
+  }
+  async deleteSavedSearch(id: string): Promise<string[]> {
+    await this.prisma.savedSearch.delete({ where: { id } })
+    return [id]
+  }
+
+  async duplicateTheme(id: string) {
+    const theme = await this.prisma.themeLibraryEntry.findUnique({ where: { id } })
+    if (!theme) throw new Error('Theme not found')
+    return this.prisma.themeLibraryEntry.create({
+      data: { id: uid('th'), name: `${theme.name} copy`, version: theme.version, role: 'library', imageSrc: theme.imageSrc, addedAt: new Date() },
+    })
+  }
+
+  async resetDemoData() {
+    await reseed(this.prisma)
+    return this.settingsSingleton()
+  }
+
   // bootstrap snapshot
   async snapshot(): Promise<any> {
-    const [products, customersRaw, orders, abandonedCheckouts, collections, locations, inventoryLevels, inventoryHistory, discounts, campaigns, staff, pages, blogPosts, files, menus, apps, notifications, tasks, theme, themeLibrary, companies, segments, transfers, giftCards, payouts, balanceTransactions, metafieldDefinitions, metafields, redirects, locales, markets, activity, returns, orderEdits, planRow, settings, themeSingleton] =
+    await ensurePayouts(this.prisma)
+    const [products, customersRaw, orders, abandonedCheckouts, collections, locations, inventoryLevels, inventoryHistory, discounts, campaigns, staff, pages, blogPosts, files, menus, apps, notifications, tasks, theme, themeLibrary, companies, segments, transfers, giftCards, payouts, balanceTransactions, metafieldDefinitions, metafields, redirects, locales, markets, activity, returns, orderEdits, planRow, settings, themeSingleton, metaobjectDefinitionRows, metaobjectEntryRows, savedSearchRows, priceListRows] =
       await Promise.all([
         this.prisma.product.findMany({ orderBy: { updatedAt: 'desc' } }),
         this.prisma.customer.findMany({}),
@@ -487,6 +657,10 @@ export class StoreContentService {
         this.plan(),
         this.settingsSingleton(),
         this.theme(),
+        this.metaobjectDefinitions(),
+        this.metaobjectEntries(),
+        this.savedSearches(),
+        this.prisma.priceList.findMany({ include: { entries: true }, orderBy: { createdAt: 'desc' } }),
       ])
     const decoratedProducts: any[] = []
     const levels = inventoryLevels
@@ -583,6 +757,10 @@ export class StoreContentService {
       returns: returns.map((r: any) => ({ ...r, lines: parseJson(r.lines as string, []) })),
       orderEdits: orderEdits.map((e: any) => ({ ...e, added: parseJson(e.added as string, []), removed: parseJson(e.removed as string, []) })),
       plan: planRow,
+      metaobjectDefinitions: metaobjectDefinitionRows,
+      metaobjectEntries: metaobjectEntryRows,
+      savedSearches: savedSearchRows,
+      priceLists: priceListRows.map((pl) => ({ ...pl, parentCompanyId: pl.companyId, entries: pl.entries.map((e) => ({ id: e.id, variantId: e.variantId, price: e.price })) })),
       settings,
       themeLibraryAll: themeLibrary,
     }
@@ -995,6 +1173,34 @@ export class StoreContentResolver {
     return this.service.shop()
   }
   @Query()
+  currentStaffMember() {
+    return this.service.currentStaffMember()
+  }
+  @Query()
+  shopPolicies() {
+    return this.service.shopPolicies()
+  }
+  @Query()
+  domains() {
+    return this.service.domains()
+  }
+  @Query()
+  savedSearches(@Args('resourceType', { nullable: true }) resourceType?: string) {
+    return this.service.savedSearches(resourceType)
+  }
+  @Query()
+  pagesCount() {
+    return this.service.pagesCount()
+  }
+  @Query()
+  blogPostsCount() {
+    return this.service.blogPostsCount()
+  }
+  @Query()
+  redirectsCount() {
+    return this.service.redirectsCount()
+  }
+  @Query()
   bootstrap() {
     return this.service.snapshot()
   }
@@ -1120,11 +1326,51 @@ export class StoreContentResolver {
     return { updatedIds: this.service.deleteMetafieldDefinition(id), userErrors: [] }
   }
   @Mutation()
+  async metaobjectDefinitionCreate(@Args('definition') definition: Record<string, any>) {
+    try {
+      return { definition: await this.service.metaobjectDefinitionCreate(definition), userErrors: [] }
+    } catch (e) {
+      return { definition: null, userErrors: [{ field: ['definition'], message: (e as Error).message }] }
+    }
+  }
+  @Mutation()
+  async metaobjectDefinitionUpdate(@Args('id') id: string, @Args('definition') definition: Record<string, any>) {
+    try {
+      return { definition: await this.service.metaobjectDefinitionUpdate(id, definition), userErrors: [] }
+    } catch (e) {
+      return { definition: null, userErrors: [{ field: ['definition'], message: (e as Error).message }] }
+    }
+  }
+  @Mutation()
+  async metaobjectDefinitionDelete(@Args('id') id: string) {
+    try {
+      return { updatedIds: await this.service.metaobjectDefinitionDelete(id), userErrors: [] }
+    } catch (e) {
+      return { updatedIds: [], userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
+  @Mutation()
   async metafieldsSet(@Args('metafields') metafields: Record<string, any>[]) {
     try {
       return { metafields: await this.service.setMetafields(metafields as never), userErrors: [] }
     } catch (e) {
       return { metafields: [], userErrors: [{ field: ['metafields'], message: (e as Error).message }] }
+    }
+  }
+  @Mutation()
+  async metafieldDefinitionUpdate(@Args('id') id: string, @Args('definition') definition: Record<string, any>) {
+    try {
+      return { definition: await this.service.metafieldDefinitionUpdate(id, definition), userErrors: [] }
+    } catch (e) {
+      return { definition: null, userErrors: [{ field: ['definition'], message: (e as Error).message }] }
+    }
+  }
+  @Mutation()
+  async metafieldsDelete(@Args('ids') ids: string[]) {
+    try {
+      return { updatedIds: await this.service.metafieldsDelete(ids), userErrors: [] }
+    } catch (e) {
+      return { updatedIds: [], userErrors: [{ field: ['ids'], message: (e as Error).message }] }
     }
   }
   @Mutation()
@@ -1216,6 +1462,66 @@ export class StoreContentResolver {
     return this.service.updateMarket(code, priceAdjustmentPercent, enabled)
   }
   @Mutation()
+  marketCreate(@Args('code') code: string, @Args('name', { nullable: true }) name?: string, @Args('currency', { nullable: true }) currency?: string) {
+    return this.service.marketCreate(code, name, currency)
+  }
+  @Mutation()
+  async marketDelete(@Args('code') code: string) {
+    try {
+      return { updatedIds: await this.service.marketDelete(code), userErrors: [] }
+    } catch (e) {
+      return { updatedIds: [], userErrors: [{ field: ['code'], message: (e as Error).message }] }
+    }
+  }
+  @Mutation()
+  shopPolicyUpdate(@Args('policy') policy: string, @Args('body') body: string) {
+    return this.service.shopPolicyUpdate(policy, body)
+  }
+  @Mutation()
+  domainAdd(@Args('host') host: string) {
+    return this.service.domainAdd(host)
+  }
+  @Mutation()
+  domainSetPrimary(@Args('host') host: string) {
+    return this.service.domainSetPrimary(host)
+  }
+  @Mutation()
+  domainDelete(@Args('host') host: string) {
+    return this.service.domainDelete(host)
+  }
+  @Mutation()
+  async savedSearchCreate(@Args('search') search: Record<string, any>) {
+    try {
+      return { savedSearch: await this.service.createSavedSearch(search), userErrors: [] }
+    } catch (e) {
+      return { savedSearch: null, userErrors: [{ field: ['search'], message: (e as Error).message }] }
+    }
+  }
+  @Mutation()
+  async savedSearchUpdate(@Args('id') id: string, @Args('search') search: Record<string, any>) {
+    try {
+      return { savedSearch: await this.service.updateSavedSearch(id, search), userErrors: [] }
+    } catch (e) {
+      return { savedSearch: null, userErrors: [{ field: ['search'], message: (e as Error).message }] }
+    }
+  }
+  @Mutation()
+  async savedSearchDelete(@Args('id') id: string) {
+    try {
+      return { updatedIds: await this.service.deleteSavedSearch(id), userErrors: [] }
+    } catch (e) {
+      return { updatedIds: [], userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
+  @Mutation()
+  themeDuplicate(@Args('id') id: string) {
+    return this.service.duplicateTheme(id)
+  }
+  @Mutation()
+  localeUpdate(@Args('code') code: string, @Args('name') name: string) {
+    return this.service.localeUpdate(code, name)
+  }
+  @Mutation()
   notificationMarkRead(@Args('id') id: string) {
     return this.service.markNotificationRead(id)
   }
@@ -1229,7 +1535,7 @@ export class StoreContentResolver {
   }
   @Mutation()
   resetDemoData() {
-    return this.service.settingsSingleton()
+    return this.service.resetDemoData()
   }
 }
 

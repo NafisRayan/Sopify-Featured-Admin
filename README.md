@@ -48,7 +48,9 @@ GraphQL mutation → Postgres → debounced `bootstrap` refetch reconciles the s
 QueryRoot, Relay-style connections with opaque cursors, `userErrors` on every
 payload, domain naming and status vocabularies. See
 [`backend/SHOPIFY_PARITY.md`](backend/SHOPIFY_PARITY.md) for the full
-domain-by-domain comparison against shopify.dev.
+domain-by-domain comparison against shopify.dev, and
+[`SHOPIFY_GAP_REPORT.md`](SHOPIFY_GAP_REPORT.md) for the gap analysis and
+scope rationale (what's in, what's out, and why) behind the 2026-10 parity pass.
 
 **Business rules live in backend services:** fulfill decrements committed stock,
 refunds update payment status and restock, cancels release reserved units,

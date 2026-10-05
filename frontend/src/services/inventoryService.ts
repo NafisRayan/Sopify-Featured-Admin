@@ -76,6 +76,7 @@ export async function transferInventory(input: TransferInput): Promise<void> {
     recordHistory(updatedFrom, -input.quantity, updatedFrom.available, 'Outgoing transfer'),
     recordHistory(updatedTo, input.quantity, updatedTo.available, 'Incoming transfer'),
   ])
+  syncMutation(`mutation { inventoryMoveQuantities(input: { variantId: ${gqlLiteral(input.variantId)}, fromLocationId: ${gqlLiteral(input.fromLocationId)}, toLocationId: ${gqlLiteral(input.toLocationId)}, quantity: ${input.quantity} }) { userErrors { message } } }`)
 }
 
 export async function bulkAdjust(
@@ -96,6 +97,7 @@ export async function bulkAdjust(
       changed++
     }
   }
+  syncMutation(`mutation { inventoryBulkAdjust(variantIds: ${gqlLiteral(variantIds)}, locationId: ${gqlLiteral(locationId)}, availableDelta: ${delta}, reason: ${gqlLiteral(reason)}) { userErrors { message } } }`)
   return changed
 }
 

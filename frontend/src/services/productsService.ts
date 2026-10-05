@@ -74,6 +74,35 @@ export async function updateProduct(id: string, patch: Partial<Product>): Promis
   syncMutation(`mutation { productUpdate(id: ${gqlLiteral(id)}, product: ${gqlLiteral(input)}) { userErrors { message } } }`)
 }
 
+/** Serialize the full product for productUpdate (mirrors updateProduct's input shape). */
+function productInput(p: Product): Record<string, unknown> {
+  return {
+    title: p.title,
+    descriptionHtml: p.descriptionHtml,
+    vendor: p.vendor,
+    productType: p.productType,
+    category: p.category,
+    status: p.status,
+    tags: p.tags,
+    collectionIds: p.collectionIds,
+    channels: p.channels,
+    options: p.options,
+    variants: p.variants.map((v) => ({ ...v, optionValues: v.optionValues ?? {} })),
+    media: p.media,
+    seo: p.seo,
+    weightGrams: p.weightGrams,
+    requiresShipping: p.requiresShipping,
+    trackQuantity: p.trackQuantity,
+  }
+}
+
+/** Re-sync a product's full state after a local patch (optimistic UI first). */
+function syncProductFull(id: string): void {
+  const p = getStore().products.find((x) => x.id === id)
+  if (!p) return
+  syncMutation(`mutation { productUpdate(id: ${gqlLiteral(id)}, product: ${gqlLiteral(productInput(p))}) { userErrors { message } } }`)
+}
+
 /** Removing products also removes them from collections (relationship integrity, spec §36) */
 export async function deleteProducts(ids: string[]): Promise<void> {
   await delay(400)
@@ -118,6 +147,7 @@ export async function setProductsStatus(ids: string[], status: ProductStatus): P
   await delay(300)
   const store = getStore()
   for (const id of ids) store.patchProduct(id, { status, updatedAt: new Date().toISOString() })
+  syncMutation(`mutation { productStatusSet(ids: ${gqlLiteral(ids)}, status: ${gqlLiteral(status)}) { userErrors { message } } }`)
 }
 
 export async function addTags(ids: string[], tags: string[]): Promise<void> {
@@ -129,6 +159,7 @@ export async function addTags(ids: string[], tags: string[]): Promise<void> {
     const merged = [...new Set([...p.tags, ...tags])]
     store.patchProduct(id, { tags: merged, updatedAt: new Date().toISOString() })
   }
+  syncMutation(`mutation { productAddTags(ids: ${gqlLiteral(ids)}, tags: ${gqlLiteral(tags)}) { userErrors { message } } }`)
 }
 
 export async function removeTags(ids: string[], tags: string[]): Promise<void> {
@@ -142,6 +173,7 @@ export async function removeTags(ids: string[], tags: string[]): Promise<void> {
       updatedAt: new Date().toISOString(),
     })
   }
+  syncMutation(`mutation { productRemoveTags(ids: ${gqlLiteral(ids)}, tags: ${gqlLiteral(tags)}) { userErrors { message } } }`)
 }
 
 // ─── Media ────────────────────────────────────────────────────────────────
@@ -156,6 +188,7 @@ export async function addMedia(productId: string, src: string, alt: string): Pro
     media: [...p.media, media],
     updatedAt: new Date().toISOString(),
   })
+  syncProductFull(productId)
 }
 
 export async function removeMedia(productId: string, mediaId: string): Promise<void> {
@@ -168,6 +201,7 @@ export async function removeMedia(productId: string, mediaId: string): Promise<v
     variants: p.variants.map((v) => (v.imageId === mediaId ? { ...v, imageId: undefined } : v)),
     updatedAt: new Date().toISOString(),
   })
+  syncProductFull(productId)
 }
 
 export async function reorderMedia(productId: string, orderedIds: string[]): Promise<void> {
@@ -179,6 +213,7 @@ export async function reorderMedia(productId: string, orderedIds: string[]): Pro
   const ordered = orderedIds.map((id) => map.get(id)).filter(Boolean) as ProductMedia[]
   const rest = p.media.filter((m) => !orderedIds.includes(m.id))
   store.patchProduct(productId, { media: [...ordered, ...rest], updatedAt: new Date().toISOString() })
+  syncMutation(`mutation { productMediaReorder(id: ${gqlLiteral(productId)}, mediaIds: ${gqlLiteral(orderedIds)}) { userErrors { message } } }`)
 }
 
 export async function setFeaturedMedia(productId: string, mediaId: string): Promise<void> {
@@ -196,12 +231,14 @@ export async function updateVariant(productId: string, variantId: string, patch:
     variants: p.variants.map((v) => (v.id === variantId ? { ...v, ...patch } : v)),
     updatedAt: new Date().toISOString(),
   })
+  syncProductFull(productId)
 }
 
 /** Update all variants at once (editor save) */
 export async function updateVariants(productId: string, variants: ProductVariant[]): Promise<void> {
   await delay(250)
   getStore().patchProduct(productId, { variants, updatedAt: new Date().toISOString() })
+  syncProductFull(productId)
 }
 
 /**
@@ -233,6 +270,7 @@ export async function setOptions(productId: string, options: ProductOption[]): P
       available: true,
     }
     store.patchProduct(productId, { options: [], variants: [variant], updatedAt: new Date().toISOString() })
+    syncProductFull(productId)
     return
   }
 
@@ -262,15 +300,19 @@ export async function setOptions(productId: string, options: ProductOption[]): P
     }
   })
   store.patchProduct(productId, { options: active, variants, updatedAt: new Date().toISOString() })
+  syncProductFull(productId)
 }
 
 export async function setChannels(productId: string, channels: SalesChannel[]): Promise<void> {
   await delay(200)
   getStore().patchProduct(productId, { channels, updatedAt: new Date().toISOString() })
+  syncProductFull(productId)
 }
 
 /** Next sequential SKU suggestion for a product's new variant */
+let skuSeq = 0
 export function suggestSku(productTitle: string): string {
   const root = productTitle.split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 4) || 'SKU'
-  return `${root}-${Math.floor(Math.random() * 900 + 100)}`
+  skuSeq += 1
+  return `${root}-${Date.now().toString(36)}${skuSeq.toString(36)}`
 }

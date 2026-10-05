@@ -14,8 +14,8 @@ import type { MetafieldDefinition, MetafieldType, MarketCountry, StoreLocale } f
 import { initials } from '@/lib/format'
 import { PERMISSION_RESOURCES } from '@/types'
 import {
-  inviteStaff, resetDemoData, saveShippingRates, setPaymentTestMode, togglePaymentProvider,
-  updateStoreSettings,
+  domainAdd, domainDelete, domainSetPrimary, inviteStaff, resetDemoData, saveShippingRates,
+  setPaymentTestMode, shopPolicyUpdate, togglePaymentProvider, updateStoreSettings,
 } from '@/services/settingsService'
 import { useCan } from '@/lib/permissions'
 import type { ShippingRate } from '@/types'
@@ -33,6 +33,7 @@ const SECTION_TITLES: Record<string, string> = {
   taxes: 'Taxes and duties',
   notifications: 'Notifications',
   policies: 'Policies',
+  domains: 'Domains',
   users: 'Users and permissions',
 }
 
@@ -52,12 +53,18 @@ export default function SettingsSectionPage() {
   const [form, setForm] = useState(settings)
   const [saving, setSaving] = useState(false)
   const [rates, setRates] = useState<ShippingRate[]>(settings.shipping)
-  const [inviteOpen, setInviteOpen] = useState(false)
   const [invite, setInvite] = useState({ name: '', email: '', role: 'staff' as 'admin' | 'staff' })
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [newDomain, setNewDomain] = useState('')
+  const [savingPolicies, setSavingPolicies] = useState(false)
+  const [payoutSchedule, setPayoutSchedule] = useState(settings.payouts?.schedule ?? 'weekly')
+  const [payoutDay, setPayoutDay] = useState(settings.payouts?.dayOfWeek ?? 'Friday')
 
   useEffect(() => {
     setForm(settings)
     setRates(settings.shipping)
+    setPayoutSchedule(settings.payouts?.schedule ?? 'weekly')
+    setPayoutDay(settings.payouts?.dayOfWeek ?? 'Friday')
   }, [settings])
 
   const title = SECTION_TITLES[section] ?? 'Settings'
@@ -461,7 +468,7 @@ export default function SettingsSectionPage() {
         </Card>
       )}
 
-      {/* ── Policies ── */}
+      {/* ── Policies (shopPolicyUpdate per changed policy) ── */}
       {section === 'policies' && (
         <div className="grid gap-4 lg:grid-cols-2">
           {(
@@ -470,6 +477,7 @@ export default function SettingsSectionPage() {
               ['privacy', 'Privacy policy'],
               ['terms', 'Terms of service'],
               ['shipping', 'Shipping policy'],
+              ['subscriber', 'Subscriber policy'],
             ] as const
           ).map(([key, label]) => (
             <DividedCard key={key}>
@@ -487,11 +495,170 @@ export default function SettingsSectionPage() {
           ))}
           {canEdit && (
             <div className="flex justify-end lg:col-span-2">
-              <Button variant="primary" onClick={() => void updateStoreSettings({ policies: form.policies }).then(() => toast('Policies saved'))}>
+              <Button
+                variant="primary"
+                loading={savingPolicies}
+                onClick={() => {
+                  const changed = (['refund', 'privacy', 'terms', 'shipping', 'subscriber'] as const).filter(
+                    (key) => form.policies[key] !== settings.policies[key],
+                  )
+                  if (changed.length === 0) {
+                    toast('No changes to save', { tone: 'info' })
+                    return
+                  }
+                  setSavingPolicies(true)
+                  void Promise.all(changed.map((key) => shopPolicyUpdate(key, form.policies[key])))
+                    .then(() => toast(`Saved ${changed.length} polic${changed.length === 1 ? 'y' : 'ies'}`))
+                    .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed to save policies', { tone: 'critical' }))
+                    .finally(() => setSavingPolicies(false))
+                }}
+              >
                 Save policies
               </Button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Domains + payout schedule ── */}
+      {section === 'domains' && (
+        <div className="space-y-4">
+          <Card padding={false}>
+            <CardHeader title="Domains" subtitle="Domains connected to your store, with SSL and verification state" />
+            <ul className="divide-y divide-border">
+              {(settings.domains ?? []).map((d) => (
+                <li key={d.host} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-medium">{d.host}</span>
+                    <span className="block text-xs text-text-muted">
+                      {d.sslEnabled ? 'SSL active' : 'SSL pending'} · verification {d.verificationStatus}
+                    </span>
+                  </span>
+                  {d.primary ? (
+                    <Badge tone="success" dot>Primary</Badge>
+                  ) : (
+                    <Badge tone={d.sslEnabled ? 'neutral' : 'warning'}>
+                      {d.sslEnabled ? 'Connected' : 'Verifying'}
+                    </Badge>
+                  )}
+                  {canEdit && (
+                    <span className="flex items-center gap-2">
+                      {!d.primary && (
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            void domainSetPrimary(d.host)
+                              .then(() => toast(`${d.host} is now the primary domain`))
+                              .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed', { tone: 'critical' }))
+                          }
+                        >
+                          Set as primary
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() =>
+                          confirm({
+                            title: `Remove ${d.host}?`,
+                            body: 'The domain stops resolving to your store immediately.',
+                            confirmLabel: 'Remove domain',
+                            destructive: true,
+                            onConfirm: async () => {
+                              await domainDelete(d.host)
+                              toast(`${d.host} removed`, { tone: 'critical' })
+                            },
+                          })
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </span>
+                  )}
+                </li>
+              ))}
+              {(settings.domains ?? []).length === 0 && (
+                <li className="px-4 py-8 text-center text-[13px] text-text-muted">No domains connected yet.</li>
+              )}
+            </ul>
+            {canEdit && (
+              <CardSection className="border-t border-border bg-[#fafafa]">
+                <form
+                  className="flex items-end gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const host = newDomain.trim().toLowerCase()
+                    if (!host || !host.includes('.')) {
+                      toast('Enter a valid domain like example.com', { tone: 'critical' })
+                      return
+                    }
+                    void domainAdd(host)
+                      .then(() => {
+                        toast(`${host} added — verification pending`)
+                        setNewDomain('')
+                      })
+                      .catch((err: unknown) => toast(err instanceof Error ? err.message : 'Failed to add domain', { tone: 'critical' }))
+                  }}
+                >
+                  <Input
+                    label="Add a domain"
+                    placeholder="example.com"
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    className="max-w-xs"
+                  />
+                  <Button size="sm" variant="primary" type="submit" disabled={!newDomain.trim()}>
+                    Add domain
+                  </Button>
+                </form>
+              </CardSection>
+            )}
+          </Card>
+
+          <Card padding={false}>
+            <CardHeader title="Payout schedule" subtitle="How often balance is sent to your bank account" />
+            <CardSection>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Select
+                  label="Schedule"
+                  value={payoutSchedule}
+                  onChange={(e) => setPayoutSchedule(e.target.value)}
+                  options={[
+                    { label: 'Daily', value: 'daily' },
+                    { label: 'Weekly', value: 'weekly' },
+                    { label: 'Every 2 weeks', value: 'biweekly' },
+                    { label: 'Monthly', value: 'monthly' },
+                  ]}
+                  disabled={!canEdit}
+                />
+                {(payoutSchedule === 'weekly' || payoutSchedule === 'biweekly') && (
+                  <Select
+                    label="Payout day"
+                    value={payoutDay}
+                    onChange={(e) => setPayoutDay(e.target.value)}
+                    options={['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map((d) => ({ label: d, value: d }))}
+                    disabled={!canEdit}
+                  />
+                )}
+              </div>
+              {canEdit && (
+                <Button
+                  variant="primary"
+                  className="mt-3"
+                  onClick={() =>
+                    void updateStoreSettings({
+                      payouts: {
+                        schedule: payoutSchedule,
+                        dayOfWeek: payoutSchedule === 'weekly' || payoutSchedule === 'biweekly' ? payoutDay : undefined,
+                      },
+                    }).then(() => toast('Payout schedule saved'))
+                  }
+                >
+                  Save schedule
+                </Button>
+              )}
+            </CardSection>
+          </Card>
         </div>
       )}
 

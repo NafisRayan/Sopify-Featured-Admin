@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import {
-  Bell, CreditCard, FileText, Globe, ListTree, Percent, ReceiptText, Settings as SettingsIcon,
+  Bell, CreditCard, FileText, Globe, Link2, ListTree, Percent, ReceiptText, Settings as SettingsIcon,
   ShoppingBag, Truck, Users, ScrollText, Languages, MapPinned,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
@@ -17,6 +17,7 @@ const SECTIONS: { to: string; icon: typeof Globe; title: string; describe: strin
   { to: '/settings/users', icon: Users, title: 'Users and permissions', describe: 'Add and control staff access to your admin' },
   { to: '/settings/notifications', icon: Bell, title: 'Notifications', describe: 'Customer email notifications and more' },
   { to: '/settings/policies', icon: FileText, title: 'Policies', describe: 'Refund, privacy, terms of service and shipping policies' },
+  { to: '/settings/domains', icon: Link2, title: 'Domains', describe: 'Connect domains, set the primary domain and payout schedule' },
   { to: '/settings/markets', icon: MapPinned, title: 'Markets', describe: 'International countries, currencies and price adjustment' },
   { to: '/settings/languages', icon: Languages, title: 'Languages', describe: 'Locales available on your storefront' },
   { to: '/settings/metafields', icon: ListTree, title: 'Metafields', describe: 'Custom fields for products, customers and orders' },

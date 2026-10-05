@@ -94,7 +94,7 @@ export default function PayoutsPage() {
       <div className="mb-4 flex flex-wrap gap-3">
         <Card className="min-w-[160px] flex-1">
           <p className="text-xs text-text-muted">Upcoming payout</p>
-          <p className="mt-1 text-lg font-semibold">{upcomingBalance >= 0 ? formatMoney(upcomingBalance) : formatMoney(upcomingBalance)}</p>
+          <p className="mt-1 text-lg font-semibold">{formatMoney(upcomingBalance)}</p>
           <p className="mt-0.5 text-xs text-text-muted">
             {scheduled.length > 0 ? `Scheduled ${formatDate(scheduled[0]!.issuedAt)}` : 'No payout scheduled'}
           </p>

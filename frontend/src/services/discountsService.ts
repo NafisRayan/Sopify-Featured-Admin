@@ -78,4 +78,5 @@ export async function setDiscountsStatus(ids: string[], status: DiscountStatus):
   await delay(250)
   const store = getStore()
   for (const id of ids) store.patchDiscount(id, { status })
+  syncMutation(`mutation { discountStatusSet(ids: ${gqlLiteral(ids)}, status: ${gqlLiteral(status)}) { userErrors { message } } }`)
 }

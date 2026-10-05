@@ -351,6 +351,11 @@ type CustomerDeletePayload {
   userErrors: [UserError!]!
 }
 
+type CustomersPayload {
+  customers: [Customer!]!
+  userErrors: [UserError!]!
+}
+
 # ─── B2B companies ──────────────────────────────────────────────────────────
 
 type CompanyLocation {
@@ -382,6 +387,7 @@ type Company implements Node {
   priceListDiscountPercent: Float!
   createdAt: DateTime!
   totalSpent: Float!
+  priceLists: [PriceList!]!
 }
 
 type CompanyEdge {
@@ -423,6 +429,49 @@ type CompanyPayload {
 
 type CompanyDeletePayload {
   deletedIds: [ID!]!
+  userErrors: [UserError!]!
+}
+
+# ─── B2B price lists (Shopify: Catalog → PriceList with fixed prices) ───────
+
+type PriceListEntry {
+  id: ID!
+  variantId: ID!
+  price: Float!
+}
+
+type PriceList implements Node {
+  id: ID!
+  name: String!
+  currency: String!
+  companyId: ID
+  locationId: ID
+  parentCompanyId: ID!
+  entries: [PriceListEntry!]!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+input PriceListEntryInput {
+  variantId: ID!
+  price: Float!
+}
+
+input PriceListInput {
+  name: String!
+  currency: String
+  companyId: ID
+  locationId: ID
+  entries: [PriceListEntryInput!]!
+}
+
+type PriceListPayload {
+  priceList: PriceList
+  userErrors: [UserError!]!
+}
+
+type PriceListDeletePayload {
+  deletedId: ID
   userErrors: [UserError!]!
 }
 

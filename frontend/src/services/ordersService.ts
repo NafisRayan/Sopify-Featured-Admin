@@ -327,10 +327,9 @@ export async function setOrderTags(orderId: string, tags: string[]): Promise<voi
 
 export async function bulkAddTags(orderIds: string[], tags: string[]): Promise<void> {
   await delay(300)
-  const store = getStore()
   for (const id of orderIds) {
-    const o = store.orders.find((x) => x.id === id)
-    if (o) store.patchOrder(id, { tags: [...new Set([...o.tags, ...tags])] })
+    const o = getStore().orders.find((x) => x.id === id)
+    if (o) await setOrderTags(id, [...new Set([...o.tags, ...tags])])
   }
 }
 

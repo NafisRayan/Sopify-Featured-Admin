@@ -25,36 +25,38 @@ model Product {
   productType      String   @default("")
   category         String?
   status           String   @default("draft") // active | draft | archived
-  tags             Json     
-  collectionIds    Json     
-  channels         Json     
-  options          Json     
-  variants         Json     
-  media            Json     
-  seo              Json     
+  tags             Json
+  collectionIds    Json
+  channels         Json
+  options          Json
+  variants         Json
+  media            Json
+  seo              Json
   weightGrams      Float?
   requiresShipping Boolean  @default(true)
   trackQuantity    Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @default(now())
+
   @@schema("northstar")
 }
 
 model Collection {
-  id              String   @id
+  id              String    @id
   title           String
-  descriptionHtml String   @default("")
+  descriptionHtml String    @default("")
   imageSrc        String?
-  handle          String   @unique
-  type            String   @default("manual") // manual | smart
-  rules           Json     
-  rulesMatch      String   @default("all")
-  productIds      Json     
-  status          String   @default("active")
+  handle          String    @unique
+  type            String    @default("manual") // manual | smart
+  rules           Json
+  rulesMatch      String    @default("all")
+  productIds      Json
+  status          String    @default("active")
   seoTitle        String?
   seoDescription  String?
   publishedAt     DateTime?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
+
   @@schema("northstar")
 }
 
@@ -67,12 +69,14 @@ model Customer {
   email                 String   @unique
   phone                 String?
   defaultAddress        Json?
-  addresses             Json     
-  tags                  Json     
+  addresses             Json
+  tags                  Json
   note                  String?
   emailMarketingConsent String   @default("not_subscribed")
   taxExempt             Boolean  @default(false)
+  smsMarketingConsent    String?
   createdAt             DateTime @default(now())
+
   @@schema("northstar")
 }
 
@@ -83,10 +87,11 @@ model Company {
   status                   String   @default("active")
   customerId               String
   note                     String?
-  locations                Json     
-  contacts                 Json     
+  locations                Json
+  contacts                 Json
   priceListDiscountPercent Float    @default(0)
   createdAt                DateTime @default(now())
+
   @@schema("northstar")
 }
 
@@ -115,7 +120,7 @@ model Order {
   fulfillmentStatus String
   status            String
   channel           String    @default("Online Store")
-  lineItems         Json      
+  lineItems         Json
   shippingAddress   Json
   billingAddress    Json
   shippingTitle     String    @default("Standard shipping")
@@ -125,11 +130,11 @@ model Order {
   taxTotal          Float     @default(0)
   total             Float     @default(0)
   currency          String    @default("USD")
-  tags              Json      
+  tags              Json
   note              String?
-  timeline          Json      
-  fulfillments      Json      
-  refunds           Json      
+  timeline          Json
+  fulfillments      Json
+  refunds           Json
   paymentGateway    String    @default("Shopify Payments")
   giftCard          Json?
   isDraft           Boolean   @default(false)
@@ -144,9 +149,10 @@ model AbandonedCheckout {
   customerId     String
   email          String
   createdAt      DateTime @default(now())
-  lineItems      Json     
+  lineItems      Json
   total          Float
   recoveryStatus String   @default("not_recovered")
+
   @@schema("northstar")
 }
 
@@ -160,6 +166,7 @@ model ReturnRecord {
   refundAmount Float     @default(0)
   createdAt    DateTime  @default(now())
   closedAt     DateTime?
+
   @@schema("northstar")
 }
 
@@ -168,16 +175,18 @@ model OrderEdit {
   orderId    String
   at         DateTime @default(now())
   author     String
-  added      Json     
-  removed    Json     
+  added      Json
+  removed    Json
   deltaTotal Float    @default(0)
+
   @@schema("northstar")
 }
 
 model OrderRisk {
   orderId String @id
   level   String @default("low")
-  signals Json   
+  signals Json
+
   @@schema("northstar")
 }
 
@@ -194,6 +203,7 @@ model Location {
   phone     String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
+
   @@schema("northstar")
 }
 
@@ -201,8 +211,8 @@ model InventoryLevel {
   variantId   String
   locationId  String
   available   Int
-  committed   Int @default(0)
-  unavailable Int @default(0)
+  committed   Int    @default(0)
+  unavailable Int    @default(0)
 
   @@id([variantId, locationId])
   @@index([variantId])
@@ -218,6 +228,7 @@ model InventoryHistory {
   reason             String
   createdAt          DateTime @default(now())
   author             String
+
   @@schema("northstar")
 }
 
@@ -232,29 +243,31 @@ model Transfer {
   sentAt         DateTime?
   receivedAt     DateTime?
   note           String?
+
   @@schema("northstar")
 }
 
 // ─── Discounts & marketing ─────────────────────────────────────────────────
 
 model Discount {
-  id                  String   @id
-  code                String   @unique
+  id                  String    @id
+  code                String    @unique
   title               String
   type                String
-  method              String   @default("code")
+  method              String    @default("code")
   value               Float?
   bxgy                Json?
   minPurchase         Float?
-  customerEligibility String   @default("all")
-  productEligibility  String   @default("all")
-  productIds          Json     
+  customerEligibility String    @default("all")
+  productEligibility  String    @default("all")
+  productIds          Json
   usageLimit          Int?
-  usedCount           Int      @default(0)
-  startsAt            DateTime @default(now())
+  usedCount           Int       @default(0)
+  startsAt            DateTime  @default(now())
   endsAt              DateTime?
-  status              String   @default("active")
-  combinations        Json     
+  status              String    @default("active")
+  combinations        Json
+
   @@schema("northstar")
 }
 
@@ -270,19 +283,21 @@ model Campaign {
   orders   Int       @default(0)
   revenue  Float     @default(0)
   cost     Float     @default(0)
+
   @@schema("northstar")
 }
 
 // ─── Finances ──────────────────────────────────────────────────────────────
 
 model Payout {
-  id         String    @id
-  status     String
-  amount     Float
-  currency   String    @default("USD")
-  issuedAt   DateTime
-  arrivedAt  DateTime?
+  id          String    @id
+  status      String
+  amount      Float
+  currency    String    @default("USD")
+  issuedAt    DateTime
+  arrivedAt   DateTime?
   bankAccount String
+
   @@schema("northstar")
 }
 
@@ -296,38 +311,41 @@ model BalanceTransaction {
   orderId     String?
   description String
   payoutId    String?
+
   @@schema("northstar")
 }
 
 // ─── Gift cards ────────────────────────────────────────────────────────────
 
 model GiftCard {
-  id             String   @id
-  code           String   @unique
+  id             String    @id
+  code           String    @unique
   customerId     String?
   initialBalance Float
   balance        Float
-  currency       String   @default("USD")
-  status         String   @default("enabled")
+  currency       String    @default("USD")
+  status         String    @default("enabled")
   expiresAt      DateTime?
   note           String?
-  createdAt      DateTime @default(now())
-  history        Json     
+  createdAt      DateTime  @default(now())
+  history        Json
+
   @@schema("northstar")
 }
 
 // ─── Content & online store ────────────────────────────────────────────────
 
 model StorePage {
-  id            String   @id
-  title         String
-  contentHtml   String
-  handle        String   @unique
-  status        String   @default("published")
-  seoTitle      String?
+  id             String   @id
+  title          String
+  contentHtml    String
+  handle         String   @unique
+  status         String   @default("published")
+  seoTitle       String?
   seoDescription String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now())
+
   @@schema("northstar")
 }
 
@@ -338,9 +356,10 @@ model BlogPost {
   excerpt     String    @default("")
   contentHtml String
   imageSrc    String?
-  tags        Json      
+  tags        Json
   status      String    @default("draft")
   publishedAt DateTime?
+
   @@schema("northstar")
 }
 
@@ -353,6 +372,7 @@ model FileAsset {
   dimensions Json?
   uploadedAt DateTime @default(now())
   alt        String?
+
   @@schema("northstar")
 }
 
@@ -361,6 +381,7 @@ model NavMenu {
   title  String
   handle String @unique
   items  Json
+
   @@schema("northstar")
 }
 
@@ -369,6 +390,7 @@ model Redirect {
   from      String   @unique
   to        String
   createdAt DateTime @default(now())
+
   @@schema("northstar")
 }
 
@@ -376,6 +398,7 @@ model MetaobjectDefinition {
   id     String @id
   name   String
   fields Json
+
   @@schema("northstar")
 }
 
@@ -385,19 +408,21 @@ model MetaobjectEntry {
   fields       Json
   status       String   @default("draft")
   updatedAt    DateTime @default(now())
+
   @@schema("northstar")
 }
 
 // ─── Metafields ────────────────────────────────────────────────────────────
 
 model MetafieldDefinition {
-  id           String @id
-  namespace    String @default("custom")
+  id           String  @id
+  namespace    String  @default("custom")
   key          String
   name         String
   type         String
   description  String?
   resourceType String
+
   @@schema("northstar")
 }
 
@@ -421,32 +446,35 @@ model AppEntry {
   iconBg      String
   iconChar    String
   status      String  @default("installed")
-  permissions Json    
+  permissions Json
   category    String
   suggested   Boolean @default(false)
+
   @@schema("northstar")
 }
 
 model StaffMember {
-  id            String   @id
-  name          String
-  email         String   @unique
-  passwordHash  String?
-  role          String   @default("staff")
-  status        String   @default("active")
-  lastActiveAt  DateTime?
-  permissions   Json
+  id           String    @id
+  name         String
+  email        String    @unique
+  passwordHash String?
+  role         String    @default("staff")
+  status       String    @default("active")
+  lastActiveAt DateTime?
+  permissions  Json
+
   @@schema("northstar")
 }
 
 model ActivityEntry {
-  id        String   @id
-  at        DateTime @default(now())
-  staffId   String
-  staffName String
-  action    String
-  resource  String
+  id         String   @id
+  at         DateTime @default(now())
+  staffId    String
+  staffName  String
+  action     String
+  resource   String
   resourceId String?
+
   @@schema("northstar")
 }
 
@@ -458,6 +486,7 @@ model Notification {
   createdAt DateTime @default(now())
   read      Boolean  @default(false)
   link      String?
+
   @@schema("northstar")
 }
 
@@ -467,6 +496,7 @@ model Task {
   description String
   done        Boolean @default(false)
   link        String?
+
   @@schema("northstar")
 }
 
@@ -475,12 +505,14 @@ model Task {
 model StoreSettings {
   id    String @id @default("singleton")
   value Json
+
   @@schema("northstar")
 }
 
 model Theme {
   id    String @id @default("singleton")
   value Json
+
   @@schema("northstar")
 }
 
@@ -491,6 +523,7 @@ model ThemeLibraryEntry {
   role     String
   imageSrc String
   addedAt  DateTime @default(now())
+
   @@schema("northstar")
 }
 
@@ -500,28 +533,69 @@ model Plan {
   status        String
   trialDaysLeft Int    @default(0)
   storeId       String
-  @@schema("northstar")
-}
-model ShopCounter {
-  id    String @id
-  value Int    @default(1000)
+
   @@schema("northstar")
 }
 
+model ShopCounter {
+  id    String @id
+  value Int    @default(1000)
+
+  @@schema("northstar")
+}
 
 model Locale {
   code      String  @id
   name      String
   isDefault Boolean @default(false)
   published Boolean @default(false)
+
   @@schema("northstar")
 }
 
 model MarketCountry {
-  code                    String  @id
-  name                    String
-  currency                String
-  priceAdjustmentPercent  Float   @default(0)
-  enabled                 Boolean @default(false)
+  code                   String  @id
+  name                   String
+  currency               String
+  priceAdjustmentPercent Float   @default(0)
+  enabled                Boolean @default(false)
+
+  @@schema("northstar")
+}
+
+model PriceList {
+  id         String           @id @default(cuid())
+  name       String
+  currency   String           @default("USD")
+  companyId  String?
+  locationId String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  entries    PriceListEntry[]
+
+  @@index([companyId])
+  @@schema("northstar")
+}
+
+model PriceListEntry {
+  id          String    @id @default(cuid())
+  priceListId String
+  variantId   String
+  price       Float
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+
+  @@unique([priceListId, variantId])
+  @@index([variantId])
+  @@schema("northstar")
+}
+
+model SavedSearch {
+  id           String   @id @default(cuid())
+  name         String
+  resourceType String
+  query        String
+  createdAt    DateTime @default(now())
+
+  @@index([resourceType])
   @@schema("northstar")
 }

@@ -82,6 +82,27 @@ type Query {
 
   # Convenience hydration snapshot for the admin SPA (documented deviation)
   bootstrap: AdminSnapshot!
+
+  # Shopify-parity additions (2026-10 gap report)
+  currentStaffMember: StaffMember
+  shopPolicies: JSON!
+  domains: [StoreDomain!]!
+  savedSearches(resourceType: String): [SavedSearch!]!
+  priceLists(companyId: ID): [PriceList!]!
+  priceList(id: ID!): PriceList
+  analytics(from: DateTime!, to: DateTime!): AnalyticsSummary!
+  productsCount(query: String): Int!
+  customersCount(query: String): Int!
+  collectionsCount(query: String): Int!
+  ordersCount(query: String, status: String): Int!
+  draftOrdersCount(query: String): Int!
+  discountsCount(query: String): Int!
+  giftCardsCount(query: String): Int!
+  segmentsCount: Int!
+  pagesCount: Int!
+  blogPostsCount: Int!
+  redirectsCount: Int!
+  locationsCount: Int!
 }
 
 type AdminSnapshot {
@@ -121,6 +142,10 @@ type AdminSnapshot {
   orderEdits: [JSON!]!
   plan: Plan!
   settings: StoreSettings!
+  metaobjectDefinitions: [MetaobjectDefinition!]!
+  metaobjectEntries: [MetaobjectEntry!]!
+  savedSearches: [SavedSearch!]!
+  priceLists: [PriceList!]!
 }
 
 # ─── Mutation root ──────────────────────────────────────────────────────────
@@ -145,6 +170,7 @@ type Mutation {
   collectionDelete(ids: [ID!]!): CollectionDeletePayload!
   collectionAddProducts(id: ID!, productIds: [ID!]!): CollectionProductsPayload!
   collectionRemoveProducts(id: ID!, productIds: [ID!]!): CollectionProductsPayload!
+  collectionDuplicate(id: ID!): CollectionPayload!
 
   # Customers
   customerCreate(customer: CustomerInput!): CustomerPayload!
@@ -154,6 +180,10 @@ type Mutation {
   customerRemoveTags(ids: [ID!]!, tags: [String!]!): TagsPayload!
   customerAddressAdd(id: ID!, address: AddressInput!): CustomerPayload!
   customerAddressDefaultSet(id: ID!, index: Int!): CustomerPayload!
+  customerSendAccountInviteEmail(id: ID!): CustomerPayload!
+  customerEmailMarketingConsentUpdate(ids: [ID!]!, consentState: String!): CustomersPayload!
+  customerSmsMarketingConsentUpdate(ids: [ID!]!, consentState: String!): CustomersPayload!
+  customerMerge(primaryId: ID!, secondaryId: ID!): CustomerPayload!
 
   # Companies (B2B)
   companyCreate(company: CompanyInput!): CompanyPayload!
@@ -161,6 +191,9 @@ type Mutation {
   companyDelete(id: ID!): CompanyDeletePayload!
   companyLocationAdd(id: ID!, location: CompanyLocationInput!): CompanyPayload!
   companyContactAdd(id: ID!, contact: CompanyContactInput!): CompanyPayload!
+  priceListCreate(input: PriceListInput!): PriceListPayload!
+  priceListUpdate(id: ID!, input: PriceListInput!): PriceListPayload!
+  priceListDelete(id: ID!): PriceListDeletePayload!
 
   # Segments
   segmentCreate(segment: SegmentInput!): SegmentPayload!
@@ -176,6 +209,8 @@ type Mutation {
   orderFulfill(input: OrderFulfillInput!): OrderPayload!
   orderRefund(input: OrderRefundInput!): OrderPayload!
   orderEdit(id: ID!, added: [OrderLineItemInput!]!, removed: [OrderLineItemInput!]!): OrderEditPayload!
+  fulfillmentCancel(fulfillmentId: ID!): OrderPayload!
+  fulfillmentEventCreate(fulfillmentId: ID!, status: String!, message: String): OrderPayload!
 
   # Draft orders
   draftOrderCreate(customerId: ID!, items: [OrderLineItemInput!]!, note: String, tags: [String!], shippingPrice: Float, discountAmount: Float, discountCode: String, giftCardCode: String): OrderPayload!
@@ -184,10 +219,15 @@ type Mutation {
   draftOrderConvert(id: ID!): OrderPayload!
   draftOrderInvoiceSend(id: ID!): OrderPayload!
   draftOrderCalculate(input: DraftOrderCalculateInput!): DraftOrderCalculatePayload!
+  draftOrderCreateFromOrder(orderId: ID!): OrderPayload!
+  draftOrderDuplicate(id: ID!): OrderPayload!
 
   # Returns
   returnCreate(orderId: ID!, lines: [ReturnLineInput!]!, reason: String!, restock: Boolean, refundAmount: Float): ReturnPayload!
   returnClose(id: ID!, markRefunded: Boolean): ReturnPayload!
+  returnApprove(id: ID!): ReturnPayload!
+  returnDecline(id: ID!, reason: String): ReturnPayload!
+  returnCancel(id: ID!): ReturnPayload!
 
   # Abandoned checkouts
   abandonedCheckoutRecoverySend(id: ID!): AbandonedCheckoutPayload!
@@ -201,6 +241,11 @@ type Mutation {
   inventoryTransferCreate(input: TransferCreateInput!): TransferPayload!
   inventoryTransferSend(id: ID!): TransferPayload!
   inventoryTransferReceive(id: ID!): TransferPayload!
+  inventorySetOnHandQuantities(input: InventorySetOnHandInput!): InventoryLevelPayload!
+  inventoryMoveQuantities(input: InventoryMoveInput!): InventoryLevelsPayload!
+  inventoryItemUpdate(variantId: ID!, sku: String, cost: Float, tracked: Boolean): ProductVariantPayload!
+  inventoryActivate(variantId: ID!): ProductVariantPayload!
+  inventoryDeactivate(variantId: ID!): ProductVariantPayload!
 
   # Discounts & marketing
   discountCreate(discount: DiscountInput!): DiscountPayload!
@@ -218,6 +263,7 @@ type Mutation {
   giftCardEnable(id: ID!): GiftCardPayload!
   giftCardBalanceAdjust(id: ID!, newBalance: Float!, note: String): GiftCardPayload!
   giftCardSendNotification(id: ID!): GiftCardPayload!
+  giftCardUpdate(id: ID!, note: String, expiresOn: DateTime): GiftCardPayload!
 
   # Content
   pageCreate(page: PageInput!): PagePayload!
@@ -236,11 +282,16 @@ type Mutation {
   metaobjectEntryCreate(entry: MetaobjectEntryInput!): MetaobjectEntryPayload!
   metaobjectEntryUpdate(id: ID!, entry: MetaobjectEntryInput!): MetaobjectEntryPayload!
   metaobjectEntryDelete(id: ID!): OrdersPayload!
+  metaobjectDefinitionCreate(definition: MetaobjectDefinitionInput!): MetaobjectDefinitionPayload!
+  metaobjectDefinitionUpdate(id: ID!, definition: MetaobjectDefinitionInput!): MetaobjectDefinitionPayload!
+  metaobjectDefinitionDelete(id: ID!): OrdersPayload!
 
   # Metafields
   metafieldDefinitionCreate(definition: MetafieldDefinitionInput!): MetafieldDefinitionPayload!
   metafieldDefinitionDelete(id: ID!): OrdersPayload!
   metafieldsSet(metafields: [MetafieldInput!]!): MetafieldsPayload!
+  metafieldDefinitionUpdate(id: ID!, definition: MetafieldDefinitionInput!): MetafieldDefinitionPayload!
+  metafieldsDelete(ids: [ID!]!): OrdersPayload!
 
   # Staff
   staffMemberCreate(input: StaffMemberInput!): StaffMemberPayload!
@@ -266,5 +317,16 @@ type Mutation {
   notificationMarkRead(id: ID!): StoreSettings!
   notificationMarkAllRead: StoreSettings!
   taskToggle(id: ID!): StoreSettings!
+  themeDuplicate(id: ID!): ThemeLibraryEntry!
+  localeUpdate(code: String!, name: String!): StoreSettings!
+  marketCreate(code: String!, name: String, currency: String): MarketCountry!
+  marketDelete(code: ID!): OrdersPayload!
+  shopPolicyUpdate(policy: String!, body: String!): StoreSettings!
+  domainAdd(host: String!): [StoreDomain!]!
+  domainSetPrimary(host: String!): [StoreDomain!]!
+  domainDelete(host: String!): [StoreDomain!]!
+  savedSearchCreate(search: SavedSearchInput!): SavedSearchPayload!
+  savedSearchUpdate(id: ID!, search: SavedSearchInput!): SavedSearchPayload!
+  savedSearchDelete(id: ID!): OrdersPayload!
   resetDemoData: StoreSettings!
 }

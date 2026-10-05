@@ -205,6 +205,29 @@ export class CommerceService {
     return this.giftCard(id)
   }
 
+  async updateGiftCard(id: string, note?: string, expiresOn?: string) {
+    const card = await this.prisma.giftCard.findUnique({ where: { id } })
+    if (!card) throw new Error('Gift card not found')
+    const data: Record<string, unknown> = {}
+    if (note !== undefined) data.note = note
+    if (expiresOn !== undefined) data.expiresAt = expiresOn ? new Date(expiresOn) : null
+    const history = parseJson<unknown[]>(card.history as string, [])
+    history.push({ id: uid('gch'), at: new Date().toISOString(), type: 'updated', amount: 0, note: note ?? 'Gift card updated' })
+    data.history = toJson(history)
+    await this.prisma.giftCard.update({ where: { id }, data })
+    return this.giftCard(id)
+  }
+
+  async discountsCount(query?: string) {
+    const rows = (await this.prisma.discount.findMany()) as unknown as Record<string, unknown>[]
+    return filterByQuery(rows, query, (r) => [r.code as string, r.title as string]).length
+  }
+
+  async giftCardsCount(query?: string) {
+    const rows = (await this.prisma.giftCard.findMany()) as unknown as Record<string, unknown>[]
+    return filterByQuery(rows, query, (r) => [r.code as string, r.note as string]).length
+  }
+
   async sendNotification(id: string) {
     const card = await this.prisma.giftCard.findUnique({ where: { id } })
     if (!card) throw new Error('Gift card not found')
@@ -222,7 +245,7 @@ export class CommerceService {
       amount: 0,
       note: 'Gift card notification sent to customer',
     })
-    await this.prisma.giftCard.update({
+    const updated = await this.prisma.giftCard.update({
       where: { id },
       data: { history: toJson(history) },
     })
@@ -235,7 +258,7 @@ export class CommerceService {
         link: `/gift-cards/${card.id}`,
       },
     })
-    return this.giftCard(id)
+    return updated
   }
 }
 
@@ -246,6 +269,14 @@ export class CommerceResolver {
   @Query()
   discount(@Args('id') id: string) {
     return this.service.discount(id)
+  }
+  @Query()
+  discountsCount(@Args('query', { nullable: true }) query?: string) {
+    return this.service.discountsCount(query)
+  }
+  @Query()
+  giftCardsCount(@Args('query', { nullable: true }) query?: string) {
+    return this.service.giftCardsCount(query)
   }
 
   @Query()
@@ -371,6 +402,14 @@ export class CommerceResolver {
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e)
       return { giftCard: null, userErrors: [{ field: ['id'], message }] }
+    }
+  }
+  @Mutation()
+  async giftCardUpdate(@Args('id') id: string, @Args('note', { nullable: true }) note?: string, @Args('expiresOn', { nullable: true }) expiresOn?: string) {
+    try {
+      return { giftCard: await this.service.updateGiftCard(id, note, expiresOn), userErrors: [] }
+    } catch (e) {
+      return { giftCard: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
     }
   }
 }

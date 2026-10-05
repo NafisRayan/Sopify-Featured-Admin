@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { coreMetrics, dailySeries, channelBreakdown, topProducts } from '@/lib/analytics'
+import { serverCoreMetrics, useAnalyticsSummary } from '@/features/analytics/useAnalyticsSummary'
 import { formatMoney, formatNumber, formatPercent, formatRelative } from '@/lib/format'
 import { lowStockVariants } from '@/store/selectors'
 import { Card, CardHeader, Badge, Toggle, EmptyState } from '@/components/ui'
@@ -89,7 +90,10 @@ export default function DashboardPage() {
   const tasks = useStore((s) => s.tasks)
   const range = useDashboardRange()
 
-  const metrics = useMemo(() => coreMetrics(orders, range), [orders, range])
+  const localMetrics = useMemo(() => coreMetrics(orders, range), [orders, range])
+  // remote: server analytics win; offline: local rollups (labeled below)
+  const summaryPair = useAnalyticsSummary(range)
+  const metrics = summaryPair ? serverCoreMetrics(summaryPair, localMetrics.unitsSold) : localMetrics
   const series = useMemo(() => dailySeries(orders, range), [orders, range])
   const channels = useMemo(() => channelBreakdown(orders, range), [orders, range])
   const top = useMemo(() => topProducts(orders, products, range, 6), [orders, products, range])
@@ -108,8 +112,8 @@ export default function DashboardPage() {
   }))
   const channelTotal = channels.reduce((s, c) => s + c.sales, 0)
 
-  // conversion proxy: orders ÷ (orders ÷ simulated 2.4% baseline rate)
-  const conversion = Math.min(100, 2.4 + (metrics.returningRate > 25 ? 0.6 : 0))
+  // simulated baseline — no session tracking in this admin; label reflects that
+  const conversion = 2.4
 
   return (
     <div>
@@ -122,7 +126,7 @@ export default function DashboardPage() {
       {/* KPI row */}
       <div className="mb-4 flex flex-wrap gap-3">
         <MetricCard label="Total sales" value={formatMoney(metrics.totalSales)} delta={metrics.salesDelta} />
-        <MetricCard label="Net sales" value={formatMoney(metrics.netSales)} delta={metrics.salesDelta} />
+        <MetricCard label="Net sales" value={formatMoney(metrics.netSales)} delta={metrics.netSalesDelta} />
         <MetricCard label="Orders" value={formatNumber(metrics.ordersCount)} delta={metrics.ordersDelta} />
         <MetricCard label="Average order value" value={formatMoney(metrics.aov)} delta={metrics.aovDelta} />
         <MetricCard
@@ -132,6 +136,11 @@ export default function DashboardPage() {
           deltaSuffix="pp"
         />
       </div>
+      {!summaryPair && (
+        <p className="-mt-1 mb-4 text-xs text-text-muted">
+          Offline — sales figures are local rollups over synced orders.
+        </p>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Sales over time */}

@@ -21,6 +21,24 @@ export class OrdersResolver {
   }
 
   @Query()
+  ordersCount(
+    @Args('query', { nullable: true }) query?: string,
+    @Args('status', { nullable: true }) status?: string,
+  ) {
+    return this.service.ordersCount(query, status)
+  }
+
+  @Query()
+  draftOrdersCount(@Args('query', { nullable: true }) query?: string) {
+    return this.service.draftOrdersCount(query)
+  }
+
+  @Query()
+  analytics(@Args('from') from: Date, @Args('to') to: Date) {
+    return this.service.analytics(from, to)
+  }
+
+  @Query()
   abandonedCheckouts(@Args('first') first: number) {
     return this.service.abandonedCheckouts(first)
   }
@@ -102,6 +120,28 @@ export class OrdersResolver {
   }
 
   @Mutation()
+  async fulfillmentCancel(@Args('fulfillmentId') fulfillmentId: string) {
+    try {
+      return { order: await this.service.fulfillmentCancel(fulfillmentId), userErrors: [] }
+    } catch (e) {
+      return { order: null, userErrors: [{ field: ['fulfillmentId'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async fulfillmentEventCreate(
+    @Args('fulfillmentId') fulfillmentId: string,
+    @Args('status') status: string,
+    @Args('message', { nullable: true }) message?: string,
+  ) {
+    try {
+      return { order: await this.service.fulfillmentEventCreate(fulfillmentId, status, message), userErrors: [] }
+    } catch (e) {
+      return { order: null, userErrors: [{ field: ['input'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
   async returnCreate(@Args() input: Record<string, any>) {
     try {
       return { return: await this.service.createReturn(input), userErrors: [] }
@@ -129,6 +169,33 @@ export class OrdersResolver {
   }
 
   @Mutation()
+  async returnApprove(@Args('id') id: string) {
+    try {
+      return { return: await this.service.approveReturn(id), userErrors: [] }
+    } catch (e) {
+      return { return: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async returnDecline(@Args('id') id: string, @Args('reason', { nullable: true }) reason?: string) {
+    try {
+      return { return: await this.service.declineReturn(id, reason), userErrors: [] }
+    } catch (e) {
+      return { return: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async returnCancel(@Args('id') id: string) {
+    try {
+      return { return: await this.service.cancelReturn(id), userErrors: [] }
+    } catch (e) {
+      return { return: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
   async draftOrderUpdate(@Args('id') id: string, @Args() input: Record<string, any>) {
     try {
       return { order: await this.service.updateDraft(id, input), userErrors: [] }
@@ -142,6 +209,24 @@ export class OrdersResolver {
     return { updatedIds: this.service.deleteDrafts(ids), userErrors: [] }
   }
 
+
+  @Mutation()
+  async draftOrderCreateFromOrder(@Args('orderId') orderId: string) {
+    try {
+      return { order: await this.service.draftOrderCreateFromOrder(orderId), userErrors: [] }
+    } catch (e) {
+      return { order: null, userErrors: [{ field: ['orderId'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async draftOrderDuplicate(@Args('id') id: string) {
+    try {
+      return { order: await this.service.draftOrderDuplicate(id), userErrors: [] }
+    } catch (e) {
+      return { order: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
   @Mutation()
   async draftOrderConvert(@Args('id') id: string) {
     try {

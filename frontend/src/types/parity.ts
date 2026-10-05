@@ -191,7 +191,7 @@ export interface ReturnLine {
 export interface ReturnRecord {
   id: ID
   orderId: ID
-  status: 'open' | 'returned' | 'cancelled'
+  status: 'requested' | 'approved' | 'complete' | 'declined' | 'canceled' | 'open' | 'returned' | 'cancelled'
   lines: ReturnLine[]
   reason: string
   restock: boolean

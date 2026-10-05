@@ -1,4 +1,5 @@
 import { useStore } from '@/store/useStore'
+import type { AnalyticsSummary } from '@/types'
 
 /**
  * GraphQL bridge to the NestJS backend (backend/).
@@ -57,6 +58,9 @@ export async function gqlRequest<T = any>(query: string, variables?: Record<stri
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
+    // Hard cap: a stalled socket (e.g. mid-restart backend) would otherwise hang
+    // the bootstrap reconcile guard (`refreshing`) forever.
+    signal: AbortSignal.timeout(90_000),
   })
   const json = await res.json()
   if (json.errors?.length) throw new Error(json.errors[0].message)
@@ -133,6 +137,10 @@ const SNAPSHOT_QUERY = `{
     orderEdits
     plan { name status trialDaysLeft storeId }
     settings { value }
+    metaobjectDefinitions { id name fields { key label type } }
+    metaobjectEntries { id definitionId fields status updatedAt }
+    savedSearches { id name resourceType query createdAt }
+    priceLists { id name currency companyId locationId parentCompanyId entries { id variantId price } createdAt updatedAt }
   }
 }`
 
@@ -187,4 +195,13 @@ export async function mutatePayload(field: string, mutation: string): Promise<{ 
   scheduleRefresh()
   const entityKey = Object.keys(payload).find((k) => k !== 'userErrors')
   return { entity: entityKey ? payload[entityKey] : null, userErrors: payload.userErrors ?? [] }
+}
+
+/** Server-computed analytics for a date range (remote mode only; null offline). */
+export async function fetchAnalytics(from: string, to: string): Promise<AnalyticsSummary | null> {
+  if (!IS_REMOTE) return null
+  const data = await gqlRequest<{ analytics: AnalyticsSummary }>(
+    `{ analytics(from: ${q(from)}, to: ${q(to)}) { from to grossSales discounts refunds netSales shipping taxes giftCardSales ordersCount avgOrderValue returningCustomerRate topProducts { productId title units revenue } } }`,
+  )
+  return data.analytics ?? null
 }

@@ -140,6 +140,13 @@ export interface TimelineEvent {
   author: string
 }
 
+export interface FulfillmentEvent {
+  id: ID
+  status: string
+  message?: string
+  occurredAt: string
+}
+
 export interface Fulfillment {
   id: ID
   createdAt: string
@@ -147,7 +154,8 @@ export interface Fulfillment {
   trackingNumber?: string
   carrier?: string
   locationId: ID
-  status: 'success'
+  status: 'success' | 'canceled'
+  events?: FulfillmentEvent[]
 }
 
 export interface Refund {
@@ -464,7 +472,7 @@ export interface StoreSettings {
   payments: PaymentProvider[]
   shipping: ShippingRate[]
   taxes: { chargeTaxOnShipping: boolean; includeTaxInPrices: boolean; taxRate: number }
-  policies: { refund: string; privacy: string; terms: string; shipping: string }
+  policies: { refund: string; privacy: string; terms: string; shipping: string; subscriber: string }
   notifications: {
     orderConfirmation: boolean
     shippingConfirmation: boolean
@@ -474,6 +482,8 @@ export interface StoreSettings {
   pageTitle?: string
   metaDescription?: string
   passwordProtected?: boolean
+  payouts?: { schedule: string; dayOfWeek?: string }
+  domains?: StoreDomain[]
 }
 
 // ─── Notifications & tasks ─────────────────────────────────────────────────
@@ -494,4 +504,63 @@ export interface TaskItem {
   description: string
   done: boolean
   link?: string
+}
+
+// ─── B2B price lists, saved searches, domains, analytics (parity) ──────────
+
+export interface PriceListEntry {
+  id: ID
+  variantId: ID
+  price: number
+}
+
+export interface PriceList {
+  id: ID
+  name: string
+  currency: string
+  companyId?: ID
+  locationId?: ID
+  parentCompanyId: ID
+  entries: PriceListEntry[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SavedSearch {
+  id: ID
+  name: string
+  resourceType: string
+  query: string
+  createdAt: string
+}
+
+export interface StoreDomain {
+  host: string
+  primary: boolean
+  sslEnabled: boolean
+  verificationStatus: string
+  createdAt: string
+}
+
+export interface AnalyticsTopProduct {
+  productId: ID
+  title: string
+  units: number
+  revenue: number
+}
+
+export interface AnalyticsSummary {
+  from: string
+  to: string
+  grossSales: number
+  discounts: number
+  refunds: number
+  netSales: number
+  shipping: number
+  taxes: number
+  giftCardSales: number
+  ordersCount: number
+  avgOrderValue: number
+  returningCustomerRate: number
+  topProducts: AnalyticsTopProduct[]
 }

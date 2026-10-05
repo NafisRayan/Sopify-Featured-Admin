@@ -83,11 +83,11 @@ export interface CoreMetrics {
   aov: number
   returningRate: number
   salesDelta: number // % change vs previous period
+  netSalesDelta: number
   ordersDelta: number
   aovDelta: number
   returningDelta: number
 }
-
 const countableOrders = (orders: Order[]) =>
   orders.filter((o) => o.status !== 'draft' && o.status !== 'cancelled')
 
@@ -97,6 +97,14 @@ export function coreMetrics(allOrders: Order[], range: DateRange): CoreMetrics {
 
   const totalSales = roundMoney(cur.reduce((s, o) => s + o.total, 0))
   const prevSales = roundMoney(prev.reduce((s, o) => s + o.total, 0))
+  // local rollup: gross − discounts − refunds (mirrors server analytics; remote
+  // mode prefers api.fetchAnalytics netSales over this offline fallback)
+  const discounts = roundMoney(cur.reduce((s, o) => s + (o.discountCode?.amount ?? 0), 0))
+  const refunded = roundMoney(cur.reduce((s, o) => s + o.refunds.reduce((x, r) => x + r.amount, 0), 0))
+  const netSales = roundMoney(Math.max(0, totalSales - discounts - refunded))
+  const prevDiscounts = roundMoney(prev.reduce((s, o) => s + (o.discountCode?.amount ?? 0), 0))
+  const prevRefunded = roundMoney(prev.reduce((s, o) => s + o.refunds.reduce((x, r) => x + r.amount, 0), 0))
+  const prevNetSales = roundMoney(Math.max(0, prevSales - prevDiscounts - prevRefunded))
   const ordersCount = cur.length
   const prevOrders = prev.length
   const aov = ordersCount ? totalSales / ordersCount : 0
@@ -118,7 +126,8 @@ export function coreMetrics(allOrders: Order[], range: DateRange): CoreMetrics {
 
   return {
     totalSales,
-    netSales: roundMoney(totalSales * 0.972), // after simulated processing fees
+    netSales,
+    netSalesDelta: delta(netSales, prevNetSales),
     ordersCount,
     unitsSold: cur.reduce((s, o) => s + o.lineItems.reduce((q, li) => q + li.quantity, 0), 0),
     aov,

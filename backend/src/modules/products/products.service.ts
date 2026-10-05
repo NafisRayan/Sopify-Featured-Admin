@@ -123,6 +123,16 @@ export class ProductsService {
     return toConnection(decorated, args.first, args.after, args.last, args.before)
   }
 
+  async productsCount(query?: string): Promise<number> {
+    let rows = (await this.prisma.product.findMany()) as unknown as Record<string, unknown>[]
+    rows = filterByQuery(rows, query, (r) => [
+      r.title as string, r.vendor as string, r.productType as string,
+      parseJson<string[]>(r.tags as string, []).join(' '),
+      parseJson<{ sku?: string }[]>(r.variants as string, []).map((v) => v.sku ?? '').join(' '),
+    ])
+    return rows.length
+  }
+
   async create(input: Record<string, any>): Promise<any> {
     const now = new Date()
     const id = uid('p')
@@ -456,6 +466,38 @@ export class ProductsService {
     return id
   }
 
+  async updateInventoryItem(
+    variantId: string,
+    input: { sku?: string; cost?: number | null; tracked?: boolean },
+  ): Promise<Record<string, unknown>> {
+    const target = await this.findProductForVariant(variantId)
+    if (!target) throw new Error(`Variant ${variantId} not found`)
+    const { product: targetProduct, index: targetIndex, variant: targetVariant } = target
+
+    const updated: Record<string, unknown> = { ...targetVariant }
+    if (input.sku !== undefined) {
+      const sku = typeof input.sku === 'string' ? input.sku.trim() : ''
+      if (sku && sku !== targetVariant.sku) {
+        await this.assertUniqueSkus([{ sku }], targetProduct.id)
+      }
+      updated.sku = sku
+    }
+    if (input.cost !== undefined) updated.costPerItem = input.cost != null ? roundMoney(Number(input.cost)) : null
+    if (input.tracked !== undefined) updated.tracked = Boolean(input.tracked)
+
+    const variants = parseJson<Record<string, unknown>[]>(targetProduct.variants as string, [])
+    variants[targetIndex] = updated
+    await this.prisma.product.update({
+      where: { id: targetProduct.id },
+      data: { variants: toJson(variants), updatedAt: new Date() },
+    })
+    return updated
+  }
+
+  async setVariantTracked(variantId: string, tracked: boolean): Promise<Record<string, unknown>> {
+    return this.updateInventoryItem(variantId, { tracked })
+  }
+
 
   async setStatus(ids: string[], status: string): Promise<string[]> {
     await this.prisma.product.updateMany({ where: { id: { in: ids } }, data: { status, updatedAt: new Date() } })
@@ -495,6 +537,12 @@ export class ProductsService {
     rows = filterByQuery(rows, args.query, (r) => [r.title as string, r.handle as string])
     const mapped = rows.map(mapCollection)
     return toConnection(mapped, args.first, args.after, args.last, args.before)
+  }
+
+  async collectionsCount(query?: string): Promise<number> {
+    let rows = (await this.prisma.collection.findMany()) as unknown as Record<string, unknown>[]
+    rows = filterByQuery(rows, query, (r) => [r.title as string, r.handle as string])
+    return rows.length
   }
 
   private async evaluateSmart(rules: { column: string; relation: string; condition: string }[], match: 'all' | 'any'): Promise<string[]> {
@@ -611,5 +659,37 @@ export class ProductsService {
     const next = mode === 'add' ? [...new Set([...current, ...productIds])] : current.filter((pid) => !productIds.includes(pid))
     await this.updateCollection(id, { productIds: next })
     return this.collection(id)
+  }
+
+  async duplicateCollection(id: string): Promise<any> {
+    const source = await this.prisma.collection.findUnique({ where: { id } })
+    if (!source) throw new Error('Collection not found')
+    const base = slugify(source.handle || source.title) || 'collection'
+    let handle = `${base}-copy`
+    let n = 2
+    while (await this.prisma.collection.findUnique({ where: { handle } })) {
+      handle = `${base}-copy-${n}`
+      n += 1
+    }
+    const newId = uid('col')
+    await this.prisma.collection.create({
+      data: {
+        id: newId,
+        title: `${source.title} (copy)`,
+        descriptionHtml: source.descriptionHtml,
+        imageSrc: source.imageSrc,
+        handle,
+        type: source.type,
+        rules: toJson(parseJson<unknown[]>(source.rules as string, [])),
+        rulesMatch: source.rulesMatch,
+        productIds: toJson(parseJson<string[]>(source.productIds as string, [])),
+        status: 'draft',
+        seoTitle: source.seoTitle,
+        seoDescription: source.seoDescription,
+        publishedAt: null,
+        createdAt: new Date(),
+      },
+    })
+    return this.collection(newId)
   }
 }

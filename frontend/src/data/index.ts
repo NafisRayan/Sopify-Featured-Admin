@@ -40,10 +40,13 @@ import orderRiskJson from './order-risk.json'
 import planJson from './plan.json'
 import metaobjectDefinitionsJson from './metaobject-definitions.json'
 import metaobjectEntriesJson from './metaobject-entries.json'
+import priceListsJson from './price-lists.json'
+import savedSearchesJson from './saved-searches.json'
 import type {
   Product, Customer, Order, AbandonedCheckout, Collection, Location, InventoryLevel,
   InventoryHistoryEntry, Discount, Campaign, StaffMember, StorePage, BlogPost, FileAsset,
   NavMenu, AppEntry, StoreSettings, AdminNotification, TaskItem, ThemeSettings,
+  PriceList, SavedSearch,
 } from '@/types'
 import type {
   Company, CustomerSegment, InventoryTransfer, GiftCard, Payout, BalanceTransaction,
@@ -104,3 +107,5 @@ export const seedPlan = planJson as StorePlan
 
 export const seedMetaobjectDefinitions = metaobjectDefinitionsJson as MetaobjectDefinition[]
 export const seedMetaobjectEntries = metaobjectEntriesJson as unknown as MetaobjectEntry[]
+export const seedPriceLists = priceListsJson as unknown as PriceList[]
+export const seedSavedSearches = savedSearchesJson as unknown as SavedSearch[]

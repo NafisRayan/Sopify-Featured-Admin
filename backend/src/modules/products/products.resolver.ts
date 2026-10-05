@@ -25,6 +25,16 @@ export class ProductsResolver {
     return this.service.collections(args)
   }
 
+  @Query()
+  productsCount(@Args('query', { nullable: true }) query?: string) {
+    return this.service.productsCount(query)
+  }
+
+  @Query()
+  collectionsCount(@Args('query', { nullable: true }) query?: string) {
+    return this.service.collectionsCount(query)
+  }
+
   @Mutation()
   async productCreate(@Args('product') product: Record<string, any>) {
     try {
@@ -149,6 +159,47 @@ export class ProductsResolver {
       return { collection: await this.service.modifyProducts(id, productIds, 'remove'), userErrors: [] }
     } catch (e) {
       return { collection: null, userErrors: [{ field: ['productIds'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async inventoryItemUpdate(
+    @Args('variantId') variantId: string,
+    @Args('sku', { nullable: true }) sku?: string,
+    @Args('cost', { nullable: true }) cost?: number,
+    @Args('tracked', { nullable: true }) tracked?: boolean,
+  ) {
+    try {
+      return { productVariant: await this.service.updateInventoryItem(variantId, { sku, cost, tracked }), userErrors: [] }
+    } catch (e) {
+      return { productVariant: null, userErrors: [{ field: ['variantId'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async inventoryActivate(@Args('variantId') variantId: string) {
+    try {
+      return { productVariant: await this.service.setVariantTracked(variantId, true), userErrors: [] }
+    } catch (e) {
+      return { productVariant: null, userErrors: [{ field: ['variantId'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async inventoryDeactivate(@Args('variantId') variantId: string) {
+    try {
+      return { productVariant: await this.service.setVariantTracked(variantId, false), userErrors: [] }
+    } catch (e) {
+      return { productVariant: null, userErrors: [{ field: ['variantId'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async collectionDuplicate(@Args('id') id: string) {
+    try {
+      return { collection: await this.service.duplicateCollection(id), userErrors: [] }
+    } catch (e) {
+      return { collection: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
     }
   }
 }

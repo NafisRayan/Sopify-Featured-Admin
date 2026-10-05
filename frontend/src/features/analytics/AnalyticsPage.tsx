@@ -9,6 +9,7 @@ import {
   coreMetrics, dailySeries, seriesWithComparison, topProducts, channelBreakdown,
   previousRange,
 } from '@/lib/analytics'
+import { serverCoreMetrics, useAnalyticsSummary } from './useAnalyticsSummary'
 import { formatMoney, formatNumber, formatPercent } from '@/lib/format'
 import { Card, CardHeader, Badge, EmptyState, Toggle } from '@/components/ui'
 import { PageHeader } from '@/components/ui/Feedback'
@@ -54,7 +55,10 @@ export default function AnalyticsPage() {
   const section = (params.get('section') ?? 'overview') as SectionKey
   const compare = (params.get('compare') ?? '') === 'on'
 
-  const metrics = coreMetrics(orders, range)
+  const localMetrics = coreMetrics(orders, range)
+  // remote: server analytics win; offline/failed fetch: local rollups (labeled below)
+  const summaryPair = useAnalyticsSummary(range)
+  const metrics = summaryPair ? serverCoreMetrics(summaryPair, localMetrics.unitsSold) : localMetrics
   const series = useMemo(
     () =>
       compare
@@ -183,6 +187,11 @@ export default function AnalyticsPage() {
           <Badge tone={metrics.salesDelta >= 0 ? 'success' : 'critical'}>{metrics.salesDelta >= 0 ? '+' : ''}{metrics.salesDelta.toFixed(1)}%</Badge>
         </Card>
         <Card className="min-w-[140px] flex-1">
+          <p className="text-xs text-text-muted">Net sales</p>
+          <p className="mt-1 text-lg font-semibold">{formatMoney(metrics.netSales)}</p>
+          <Badge tone={metrics.netSalesDelta >= 0 ? 'success' : 'critical'}>{metrics.netSalesDelta >= 0 ? '+' : ''}{metrics.netSalesDelta.toFixed(1)}%</Badge>
+        </Card>
+        <Card className="min-w-[140px] flex-1">
           <p className="text-xs text-text-muted">Orders</p>
           <p className="mt-1 text-lg font-semibold">{formatNumber(metrics.ordersCount)}</p>
           <Badge tone={metrics.ordersDelta >= 0 ? 'success' : 'critical'}>{metrics.ordersDelta >= 0 ? '+' : ''}{metrics.ordersDelta.toFixed(1)}%</Badge>
@@ -202,6 +211,11 @@ export default function AnalyticsPage() {
           <p className="mt-1 text-lg font-semibold">{formatNumber(metrics.unitsSold)}</p>
         </Card>
       </div>
+      {!summaryPair && (
+        <p className="-mt-2 mb-4 text-xs text-text-muted">
+          Offline — figures are local rollups over synced orders.
+        </p>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Sales over time with optional comparison */}

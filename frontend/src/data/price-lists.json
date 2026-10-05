@@ -1,0 +1,29 @@
+[
+  {
+    "id": "pl_cascadia",
+    "name": "Cascadia Wholesale — Fixed",
+    "currency": "USD",
+    "companyId": "company_1",
+    "locationId": null,
+    "parentCompanyId": "company_1",
+    "createdAt": "2026-08-02T09:00:00.000Z",
+    "updatedAt": "2026-08-02T09:00:00.000Z",
+    "entries": [
+      { "id": "ple_cascadia_1", "variantId": "p_classic-cotton-t-shirt_v1", "price": 14.4 },
+      { "id": "ple_cascadia_2", "variantId": "p_classic-cotton-t-shirt_v2", "price": 14.4 },
+      { "id": "ple_cascadia_3", "variantId": "p_classic-cotton-t-shirt_v3", "price": 14.4 }
+    ]
+  },
+  {
+    "id": "pl_meridian",
+    "name": "Meridian Retail — Store 1 Prices",
+    "companyId": "company_2",
+    "locationId": "cl_2_1",
+    "parentCompanyId": "company_2",
+    "createdAt": "2026-08-14T09:00:00.000Z",
+    "updatedAt": "2026-08-14T09:00:00.000Z",
+    "entries": [
+      { "id": "ple_meridian_1", "variantId": "p_classic-cotton-t-shirt_v1", "price": 16.8 }
+    ]
+  }
+]

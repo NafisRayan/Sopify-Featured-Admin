@@ -786,6 +786,7 @@ const settings: StoreSettings = {
     privacy: 'We collect only what we need to fulfill your order. We never sell personal data. Analytics are anonymized.',
     terms: 'By placing an order you agree to our terms: prices include applicable duties for US orders; international duties are the recipient’s responsibility.',
     shipping: 'Orders ship within 1–2 business days from Portland OR or Brooklyn NY. Free US shipping over $75.',
+    subscriber: 'Sign up for our newsletter to hear about new arrivals and restocks. Unsubscribe any time from any email.',
   },
   notifications: { orderConfirmation: true, shippingConfirmation: true, abandonedCheckout: true, customerWelcome: false },
 }

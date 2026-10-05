@@ -149,6 +149,22 @@ input MetaobjectEntryInput {
   status: String
 }
 
+input MetaobjectFieldDefInput {
+  key: String!
+  label: String!
+  type: String!
+}
+
+input MetaobjectDefinitionInput {
+  name: String!
+  fields: [MetaobjectFieldDefInput!]!
+}
+
+type MetaobjectDefinitionPayload {
+  definition: MetaobjectDefinition
+  userErrors: [UserError!]!
+}
+
 # ─── Staff / access ─────────────────────────────────────────────────────────
 
 type StaffMember implements Node {
@@ -282,4 +298,35 @@ input ThemeSettingsInput {
   productGridColumns: Int
   showVendor: Boolean
   showQuantitySelector: Boolean
+}
+
+# ─── Domains (Settings → Domains; REST-flow compression, JSON-backed) ───────
+
+type StoreDomain {
+  host: String!
+  primary: Boolean!
+  sslEnabled: Boolean!
+  verificationStatus: String!
+  createdAt: DateTime!
+}
+
+# ─── Saved searches (per-resource list filters) ─────────────────────────────
+
+type SavedSearch implements Node {
+  id: ID!
+  name: String!
+  resourceType: String!
+  query: String!
+  createdAt: DateTime!
+}
+
+input SavedSearchInput {
+  name: String!
+  resourceType: String!
+  query: String!
+}
+
+type SavedSearchPayload {
+  savedSearch: SavedSearch
+  userErrors: [UserError!]!
 }

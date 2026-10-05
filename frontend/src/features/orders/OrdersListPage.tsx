@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Ban, CheckCheck, DollarSign, Plus, Archive, TagIcon, MoreVertical } from 'lucide-react'
+import { Ban, CheckCheck, DollarSign, Plus, Archive, TagIcon, MoreVertical, X } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { DataTable, type Column, type FilterDef, type BulkActionDef } from '@/components/data-table/DataTable'
 import {
@@ -10,8 +10,42 @@ import {
 import { formatDate, formatMoney } from '@/lib/format'
 import { FULFILLMENT_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '@/lib/constants'
 import { bulkAddTags, bulkCancel, bulkFulfill, bulkMarkPaid, bulkArchive, createDraft, convertDraft } from '@/services/ordersService'
+import { createSavedSearch, deleteSavedSearch } from '@/services/parityService'
 import { useCan } from '@/lib/permissions'
-import type { FulfillmentStatus, Order, PaymentStatus } from '@/types'
+import type { FulfillmentStatus, Order, PaymentStatus, SavedSearch } from '@/types'
+
+/** Saved-search query format: space-separated `key:value` pairs over the fields
+ * the orders table filters (status, payment_status, fulfillment_status) plus a
+ * free-text remainder — mirrors the URL params the DataTable reads. */
+const SAVED_SEARCH_KEYS: Record<string, string> = {
+  status: 'f_status',
+  payment_status: 'f_payment',
+  fulfillment_status: 'f_fulfillment',
+}
+
+function savedSearchToParams(query: string): URLSearchParams {
+  const next = new URLSearchParams()
+  const freeText: string[] = []
+  for (const token of query.split(/\s+/).filter(Boolean)) {
+    const colon = token.indexOf(':')
+    const param = colon > 0 ? SAVED_SEARCH_KEYS[token.slice(0, colon)] : undefined
+    if (param) next.set(param, token.slice(colon + 1))
+    else freeText.push(token)
+  }
+  if (freeText.length > 0) next.set('q', freeText.join(' '))
+  return next
+}
+
+function paramsToSavedQuery(params: URLSearchParams): string {
+  const parts: string[] = []
+  for (const [key, param] of Object.entries(SAVED_SEARCH_KEYS)) {
+    const value = params.get(param)
+    if (value) parts.push(`${key}:${value}`)
+  }
+  const q = params.get('q')
+  if (q) parts.push(q)
+  return parts.join(' ')
+}
 
 export function paymentTone(s: PaymentStatus) {
   return s === 'paid' ? 'success' : s === 'pending' || s === 'authorized' ? 'warning' : s === 'partially_refunded' ? 'attention' : s === 'refunded' || s === 'voided' ? 'critical' : 'neutral'
@@ -390,12 +424,41 @@ export function OrdersTable({ mode, statusFilter }: { mode: 'all' | 'drafts'; st
 
 export default function OrdersListPage() {
   const orders = useStore((s) => s.orders)
+  const savedSearches = useStore((s) => s.savedSearches)
   const [params, setParams] = useSearchParams()
+  const { toast } = useToast()
+  const canEdit = useCan('orders', 'edit')
   const tab = params.get('tab') ?? 'all'
+
+  const orderSearches = useMemo(
+    () => savedSearches.filter((s) => s.resourceType === 'orders'),
+    [savedSearches],
+  )
+  const currentQuery = paramsToSavedQuery(params)
 
   const openCount = orders.filter((o) => !o.isDraft && o.status === 'open').length
   const archivedCount = orders.filter((o) => !o.isDraft && o.status === 'closed').length
   const cancelledCount = orders.filter((o) => !o.isDraft && o.status === 'cancelled').length
+
+  const applySavedSearch = (search: SavedSearch) => {
+    // replace params entirely — resets the status tab and applies the saved filters
+    setParams(savedSearchToParams(search.query))
+  }
+
+  const saveCurrentSearch = async () => {
+    if (!currentQuery) {
+      toast('Search or filter the list first, then save it', { tone: 'warning' })
+      return
+    }
+    const name = window.prompt('Name this saved search', 'My orders view')?.trim()
+    if (!name) return
+    try {
+      await createSavedSearch({ name, resourceType: 'orders', query: currentQuery })
+      toast(`Saved search "${name}" created`)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to save search', { tone: 'critical' })
+    }
+  }
 
   return (
     <div>
@@ -414,6 +477,39 @@ export default function OrdersListPage() {
           value={tab}
           onChange={(k) => setParams(k === 'all' ? {} : { tab: k }, { replace: true })}
         />
+      </div>
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        {orderSearches.map((s) => {
+          const active = s.query !== '' && s.query === currentQuery
+          return (
+            <span
+              key={s.id}
+              className={`group inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[13px] ${
+                active ? 'border-border-strong bg-[#e3e3e3] font-medium text-text' : 'border-border text-text-muted hover:bg-surface-hover'
+              }`}
+            >
+              <button onClick={() => applySavedSearch(s)}>{s.name}</button>
+              {canEdit && (
+                <button
+                  aria-label={`Delete saved search ${s.name}`}
+                  onClick={() =>
+                    void deleteSavedSearch(s.id)
+                      .then(() => toast(`Saved search "${s.name}" deleted`, { tone: 'critical' }))
+                      .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed to delete', { tone: 'critical' }))
+                  }
+                  className="rounded p-0.5 opacity-0 transition-opacity hover:bg-critical-surface hover:text-critical-strong focus:opacity-100 group-hover:opacity-100"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </span>
+          )
+        })}
+        {canEdit && (
+          <button className="px-1 text-[13px] text-accent hover:underline" onClick={() => void saveCurrentSearch()}>
+            Save current as search
+          </button>
+        )}
       </div>
       {tab === 'all' ? (
         <OrdersTable mode="all" />

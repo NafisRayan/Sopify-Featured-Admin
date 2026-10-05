@@ -31,6 +31,14 @@ type Fulfillment {
   carrier: String
   locationId: ID!
   status: String!
+  events: [FulfillmentEvent!]!
+}
+
+type FulfillmentEvent {
+  id: ID!
+  status: String!
+  message: String
+  occurredAt: DateTime!
 }
 
 type Refund {
@@ -329,4 +337,44 @@ input TransferCreateInput {
 type TransferPayload {
   transfer: Transfer
   userErrors: [UserError!]!
+}
+
+input InventorySetOnHandInput {
+  variantId: ID!
+  locationId: ID!
+  setQuantity: Int!
+  reason: String
+}
+
+input InventoryMoveInput {
+  variantId: ID!
+  fromLocationId: ID!
+  toLocationId: ID!
+  quantity: Int!
+  reason: String
+}
+
+# ─── Analytics (server-computed from orders; replaces client-side rollups) ───
+
+type AnalyticsTopProduct {
+  productId: ID!
+  title: String!
+  units: Int!
+  revenue: Float!
+}
+
+type AnalyticsSummary {
+  from: DateTime!
+  to: DateTime!
+  grossSales: Float!
+  discounts: Float!
+  refunds: Float!
+  netSales: Float!
+  shipping: Float!
+  taxes: Float!
+  giftCardSales: Float!
+  ordersCount: Int!
+  avgOrderValue: Float!
+  returningCustomerRate: Float!
+  topProducts: [AnalyticsTopProduct!]!
 }

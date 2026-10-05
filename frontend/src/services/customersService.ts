@@ -82,6 +82,7 @@ export async function addCustomerTags(ids: string[], tags: string[]): Promise<vo
     const c = store.customers.find((x) => x.id === id)
     if (c) store.patchCustomer(id, { tags: [...new Set([...c.tags, ...tags])] })
   }
+  syncMutation(`mutation { customerAddTags(ids: ${gqlLiteral(ids)}, tags: ${gqlLiteral(tags)}) { userErrors { message } } }`)
 }
 
 export async function removeCustomerTags(ids: string[], tags: string[]): Promise<void> {
@@ -91,11 +92,16 @@ export async function removeCustomerTags(ids: string[], tags: string[]): Promise
     const c = store.customers.find((x) => x.id === id)
     if (c) store.patchCustomer(id, { tags: c.tags.filter((t) => !tags.includes(t)) })
   }
+  syncMutation(`mutation { customerRemoveTags(ids: ${gqlLiteral(ids)}, tags: ${gqlLiteral(tags)}) { userErrors { message } } }`)
 }
 
-export async function setConsent(id: string, consent: MarketingConsent): Promise<void> {
+export async function setConsent(id: string, consent: MarketingConsent, sms?: MarketingConsent): Promise<void> {
   await delay(200)
   getStore().patchCustomer(id, { emailMarketingConsent: consent })
+  syncMutation(`mutation { customerEmailMarketingConsentUpdate(ids: ${gqlLiteral([id])}, consentState: ${gqlLiteral(consent)}) { userErrors { message } } }`)
+  if (sms !== undefined) {
+    syncMutation(`mutation { customerSmsMarketingConsentUpdate(ids: ${gqlLiteral([id])}, consentState: ${gqlLiteral(sms)}) { userErrors { message } } }`)
+  }
 }
 
 export async function addAddress(id: string, address: Address): Promise<void> {
@@ -106,6 +112,7 @@ export async function addAddress(id: string, address: Address): Promise<void> {
     addresses: [...c.addresses, address],
     defaultAddress: c.defaultAddress ?? address,
   })
+  syncMutation(`mutation { customerAddressAdd(id: ${gqlLiteral(id)}, address: ${gqlLiteral(address)}) { userErrors { message } } }`)
 }
 
 export async function setDefaultAddress(id: string, index: number): Promise<void> {
@@ -114,4 +121,5 @@ export async function setDefaultAddress(id: string, index: number): Promise<void
   if (!c) throw new Error('Customer not found')
   const address = c.addresses[index]
   if (address) getStore().patchCustomer(id, { defaultAddress: address })
+  syncMutation(`mutation { customerAddressDefaultSet(id: ${gqlLiteral(id)}, index: ${index}) { userErrors { message } } }`)
 }

@@ -4,7 +4,7 @@ import { syncMutation, gqlLiteral } from './api'
 import { delay } from '@/lib/delay'
 import type {
   StoreSettings, PaymentProvider, ShippingRate, StaffMember, PermissionResource,
-  ThemeSettings,
+  ThemeSettings, StoreDomain,
 } from '@/types'
 import type { ThemeLibraryEntry } from '@/data'
 
@@ -212,4 +212,61 @@ export async function resetDemoData(): Promise<void> {
   await delay(500)
   localStorage.removeItem('northstar-admin-v1')
   getStore().resetData()
+}
+
+// ─── Domains / policies / localization (parity wrappers) ───────────────────
+
+export async function domainAdd(host: string): Promise<void> {
+  await delay(300)
+  const store = getStore()
+  const domains: StoreDomain[] = [
+    ...(store.settings.domains ?? []),
+    { host: host.trim(), primary: false, sslEnabled: false, verificationStatus: 'pending', createdAt: new Date().toISOString() },
+  ]
+  store.updateSettings({ domains })
+  syncMutation(`mutation { domainAdd(host: ${gqlLiteral(host.trim())}) { host } }`)
+}
+
+export async function domainSetPrimary(host: string): Promise<void> {
+  await delay(250)
+  const store = getStore()
+  const domains: StoreDomain[] = (store.settings.domains ?? []).map((d) => ({ ...d, primary: d.host === host }))
+  store.updateSettings({ domains })
+  syncMutation(`mutation { domainSetPrimary(host: ${gqlLiteral(host)}) { host } }`)
+}
+
+export async function domainDelete(host: string): Promise<void> {
+  await delay(250)
+  const store = getStore()
+  const domains: StoreDomain[] = (store.settings.domains ?? []).filter((d) => d.host !== host)
+  store.updateSettings({ domains })
+  syncMutation(`mutation { domainDelete(host: ${gqlLiteral(host)}) { host } }`)
+}
+
+export async function shopPolicyUpdate(policy: 'refund' | 'privacy' | 'terms' | 'shipping' | 'subscriber', body: string): Promise<void> {
+  await delay(300)
+  const store = getStore()
+  store.updateSettings({ policies: { ...store.settings.policies, [policy]: body } })
+  syncMutation(`mutation { shopPolicyUpdate(policy: ${gqlLiteral(policy)}, body: ${gqlLiteral(body)}) { storeName } }`)
+}
+
+export async function localeUpdate(code: string, name: string): Promise<void> {
+  await delay(250)
+  const store = getStore()
+  store.updateLocales(store.locales.map((l) => (l.code === code ? { ...l, name } : l)))
+  syncMutation(`mutation { localeUpdate(code: ${gqlLiteral(code)}, name: ${gqlLiteral(name)}) { storeName } }`)
+}
+
+export async function marketCreate(code: string, name: string, currency: string): Promise<void> {
+  await delay(300)
+  const store = getStore()
+  store.updateMarkets([...store.markets, { code, name, currency, priceAdjustmentPercent: 0, enabled: true }])
+  syncMutation(`mutation { marketCreate(code: ${gqlLiteral(code)}, name: ${gqlLiteral(name)}, currency: ${gqlLiteral(currency)}) { code } }`)
+}
+
+export async function marketDelete(code: string): Promise<void> {
+  await delay(250)
+  const store = getStore()
+  store.updateMarkets(store.markets.filter((m) => m.code !== code))
+  syncMutation(`mutation { marketDelete(code: ${gqlLiteral(code)}) { userErrors { message } } }`)
 }

@@ -4,6 +4,7 @@ import type {
   Product, Customer, Order, AbandonedCheckout, Collection, Location, InventoryLevel,
   InventoryHistoryEntry, Discount, Campaign, StaffMember, StorePage, BlogPost, FileAsset,
   NavMenu, AppEntry, StoreSettings, AdminNotification, TaskItem, ThemeSettings,
+  PriceList, SavedSearch,
 } from '@/types'
 import type {
   Company, CustomerSegment, InventoryTransfer, GiftCard, Payout, BalanceTransaction,
@@ -19,7 +20,7 @@ import {
   seedCompanies, seedSegments, seedTransfers, seedGiftCards, seedPayouts,
   seedBalanceTransactions, seedMetafieldDefinitions, seedMetafields, seedRedirects,
   seedLocales, seedMarkets, seedStaffActivity, seedReturns, seedOrderEdits, seedOrderRisk,
-  seedPlan, seedMetaobjectDefinitions, seedMetaobjectEntries,
+  seedPlan, seedMetaobjectDefinitions, seedMetaobjectEntries, seedPriceLists, seedSavedSearches,
 } from '@/data'
 
 /**
@@ -70,6 +71,8 @@ export interface AppState {
   plan: StorePlan[]
   metaobjectDefinitions: MetaobjectDefinition[]
   metaobjectEntries: MetaobjectEntry[]
+  priceLists: PriceList[]
+  savedSearches: SavedSearch[]
 
   // low-level entity operations (services build on these)
   addProduct: (p: Product) => void
@@ -154,6 +157,10 @@ export interface AppState {
   updatePlan: (patch: Partial<StorePlan>) => void
   upsertMetaobjectEntry: (e: MetaobjectEntry) => void
   removeMetaobjectEntry: (id: string) => void
+  upsertPriceList: (p: PriceList) => void
+  removePriceList: (id: string) => void
+  upsertSavedSearch: (s: SavedSearch) => void
+  removeSavedSearch: (id: string) => void
   resetData: () => void
   /** replace all slices from a backend bootstrap snapshot (remote mode) */
   hydrateRemote: (snap: Record<string, any>) => void
@@ -200,6 +207,8 @@ const seedState = {
   plan: [seedPlan],
   metaobjectDefinitions: seedMetaobjectDefinitions,
   metaobjectEntries: seedMetaobjectEntries,
+  priceLists: seedPriceLists,
+  savedSearches: seedSavedSearches,
 }
 
 const upsert = <T>(list: T[], item: T, key: (x: T) => string): T[] =>
@@ -321,6 +330,10 @@ export const useStore = create<AppState>()(
       updatePlan: (patch) => set((s) => ({ plan: [{ ...s.plan[0]!, ...patch }] })),
       upsertMetaobjectEntry: (e) => set((s) => ({ metaobjectEntries: upsert(s.metaobjectEntries, e, (x) => x.id) })),
       removeMetaobjectEntry: (id) => set((s) => ({ metaobjectEntries: s.metaobjectEntries.filter((e) => e.id !== id) })),
+      upsertPriceList: (p) => set((s) => ({ priceLists: upsert(s.priceLists, p, (x) => x.id) })),
+      removePriceList: (id) => set((s) => ({ priceLists: s.priceLists.filter((p) => p.id !== id) })),
+      upsertSavedSearch: (s2) => set((s) => ({ savedSearches: upsert(s.savedSearches, s2, (x) => x.id) })),
+      removeSavedSearch: (id) => set((s) => ({ savedSearches: s.savedSearches.filter((x) => x.id !== id) })),
       resetData: () => set({ ...seedState }),
 
       hydrateRemote: (snap) =>
@@ -373,6 +386,10 @@ export const useStore = create<AppState>()(
               (snap.orders ?? []).filter((o: any) => o.riskLevel != null).map((o: any) => [o.id, { level: o.riskLevel, signals: o.riskSignals }]),
             ),
             plan: [snap.plan ?? prevPlan],
+            metaobjectDefinitions: snap.metaobjectDefinitions ?? [],
+            metaobjectEntries: snap.metaobjectEntries ?? [],
+            priceLists: snap.priceLists ?? [],
+            savedSearches: snap.savedSearches ?? [],
           }
         }),
     }),

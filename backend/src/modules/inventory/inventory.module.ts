@@ -96,6 +96,65 @@ export class InventoryService {
     return { levels, userErrors: [] }
   }
 
+  async locationsCount(): Promise<number> {
+    return this.prisma.location.count()
+  }
+
+  async setOnHand(input: { variantId: string; locationId: string; setQuantity: number; reason?: string }) {
+    if (input.setQuantity == null || input.setQuantity < 0) throw new Error('setQuantity must be greater than or equal to 0')
+    const variant = await this.prisma.product.findFirst({ where: { variants: { array_contains: [{ id: input.variantId }] } } })
+    if (!variant) throw new Error('Variant not found')
+    const location = await this.prisma.location.findUnique({ where: { id: input.locationId } })
+    if (!location) throw new Error('Location not found')
+    let level = await this.prisma.inventoryLevel.findUnique({
+      where: { variantId_locationId: { variantId: input.variantId, locationId: input.locationId } },
+    })
+    if (!level) level = await this.prisma.inventoryLevel.create({ data: { variantId: input.variantId, locationId: input.locationId, available: 0, committed: 0, unavailable: 0 } })
+    const available = Math.max(0, input.setQuantity - level.committed - level.unavailable)
+    await this.prisma.inventoryLevel.update({
+      where: { variantId_locationId: { variantId: input.variantId, locationId: input.locationId } },
+      data: { available },
+    })
+    await this.log(input.variantId, input.locationId, available - level.available, available, input.reason ?? 'count')
+    await this.logActivity('Set on-hand quantity', 'inventory', input.variantId)
+    return { ...level, available, onHand: available + level.committed + level.unavailable }
+  }
+
+  async moveQuantities(input: { variantId: string; fromLocationId: string; toLocationId: string; quantity: number; reason?: string }) {
+    if (input.fromLocationId === input.toLocationId) throw new Error('Choose two different locations')
+    if (!input.quantity || input.quantity <= 0) throw new Error('quantity must be greater than zero')
+    const source = await this.prisma.inventoryLevel.findUnique({
+      where: { variantId_locationId: { variantId: input.variantId, locationId: input.fromLocationId } },
+    })
+    if (!source || source.available < input.quantity) {
+      throw new Error(`Insufficient stock at source location (has ${source?.available ?? 0}, needs ${input.quantity})`)
+    }
+    let dest = await this.prisma.inventoryLevel.findUnique({
+      where: { variantId_locationId: { variantId: input.variantId, locationId: input.toLocationId } },
+    })
+    if (!dest) dest = await this.prisma.inventoryLevel.create({ data: { variantId: input.variantId, locationId: input.toLocationId, available: 0, committed: 0, unavailable: 0 } })
+
+    const srcAvailable = source.available - input.quantity
+    await this.prisma.inventoryLevel.update({
+      where: { variantId_locationId: { variantId: input.variantId, locationId: input.fromLocationId } },
+      data: { available: srcAvailable },
+    })
+    await this.log(input.variantId, input.fromLocationId, -input.quantity, srcAvailable, input.reason ?? `Moved to ${input.toLocationId}`)
+
+    const dstAvailable = dest.available + input.quantity
+    await this.prisma.inventoryLevel.update({
+      where: { variantId_locationId: { variantId: input.variantId, locationId: input.toLocationId } },
+      data: { available: dstAvailable },
+    })
+    await this.log(input.variantId, input.toLocationId, input.quantity, dstAvailable, input.reason ?? `Moved from ${input.fromLocationId}`)
+
+    await this.logActivity('Moved inventory', 'inventory', input.variantId)
+    return [
+      { ...source, available: srcAvailable, onHand: srcAvailable + source.committed + source.unavailable },
+      { ...dest, available: dstAvailable, onHand: dstAvailable + dest.committed + dest.unavailable },
+    ]
+  }
+
   async transfers() {
     const rows = await this.prisma.transfer.findMany({ orderBy: { createdAt: 'desc' } })
     return rows.map((r) => mapTransfer(r as unknown as Record<string, unknown>))
@@ -268,6 +327,29 @@ export class InventoryResolver {
       return { transfer: await this.service.receiveTransfer(id), userErrors: [] }
     } catch (e) {
       return { transfer: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
+
+  @Query()
+  locationsCount() {
+    return this.service.locationsCount()
+  }
+
+  @Mutation()
+  async inventorySetOnHandQuantities(@Args('input') input: { variantId: string; locationId: string; setQuantity: number; reason?: string }) {
+    try {
+      return { level: await this.service.setOnHand(input), userErrors: [] }
+    } catch (e) {
+      return { level: null, userErrors: [{ field: ['input'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async inventoryMoveQuantities(@Args('input') input: { variantId: string; fromLocationId: string; toLocationId: string; quantity: number; reason?: string }) {
+    try {
+      return { levels: await this.service.moveQuantities(input), userErrors: [] }
+    } catch (e) {
+      return { levels: [], userErrors: [{ field: ['input'], message: (e as Error).message }] }
     }
   }
 }

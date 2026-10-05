@@ -125,7 +125,7 @@ export default function GiftCardsListPage() {
         searchKeys={(g) => [g.code, ownerName(g)]}
         searchPlaceholder="Search gift cards"
         filters={filters}
-        initialSort={{ key: 'created', dir: 'desc' }}
+        initialSort={{ key: 'code', dir: 'desc' }}
         onRowClick={(g) => setDetail(g)}
         hasAnyData={giftCards.length > 0}
         emptyNoData={
