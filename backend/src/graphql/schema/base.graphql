@@ -40,6 +40,8 @@ type ProductVariant implements Node {
   optionValues: JSON!
   weightGrams: Float
   imageId: ID
+  tracked: Boolean
+  requiresShipping: Boolean
   available: Boolean!
 }
 
@@ -446,7 +448,7 @@ type PriceList implements Node {
   currency: String!
   companyId: ID
   locationId: ID
-  parentCompanyId: ID!
+  parentCompanyId: ID
   entries: [PriceListEntry!]!
   createdAt: DateTime!
   updatedAt: DateTime!

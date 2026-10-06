@@ -56,6 +56,7 @@ export default function SettingsSectionPage() {
   const [invite, setInvite] = useState({ name: '', email: '', role: 'staff' as 'admin' | 'staff' })
   const [inviteOpen, setInviteOpen] = useState(false)
   const [newDomain, setNewDomain] = useState('')
+  const [resetting, setResetting] = useState(false)
   const [savingPolicies, setSavingPolicies] = useState(false)
   const [payoutSchedule, setPayoutSchedule] = useState(settings.payouts?.schedule ?? 'weekly')
   const [payoutDay, setPayoutDay] = useState(settings.payouts?.dayOfWeek ?? 'Friday')
@@ -204,21 +205,31 @@ export default function SettingsSectionPage() {
             <CardHeader title="Danger zone" subtitle="Demo utilities" />
             <CardSection>
               <p className="text-[13px] text-text-muted">
-                Reset wipes every change you've made (orders, products, settings…) and restores the generated seed data.
+                Reset wipes the database — every order, product, and setting — and reseeds the
+                original demo dataset. Takes about a minute; the page stays on this screen until it's done.
               </p>
               <Button
                 variant="destructive"
                 icon={<RotateCcw size={13} />}
                 className="mt-3"
+                loading={resetting}
+                disabled={resetting}
                 onClick={() =>
                   confirm({
                     title: 'Reset demo data?',
-                    body: 'All local changes will be discarded and the original demo dataset restored.',
+                    body: 'The database is wiped and reseeded from the demo dataset. This takes about a minute and cannot be undone.',
                     confirmLabel: 'Reset demo data',
                     destructive: true,
                     onConfirm: async () => {
-                      await resetDemoData()
-                      toast('Demo data reset', { tone: 'warning' })
+                      setResetting(true)
+                      try {
+                        await resetDemoData()
+                        toast('Demo data reset — database wiped and reseeded', { tone: 'warning' })
+                      } catch (e) {
+                        toast(e instanceof Error ? e.message : 'Reset failed', { tone: 'critical' })
+                      } finally {
+                        setResetting(false)
+                      }
                     },
                   })
                 }

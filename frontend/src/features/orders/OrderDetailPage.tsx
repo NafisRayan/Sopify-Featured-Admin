@@ -15,7 +15,7 @@ import { formatDateTime, formatMoney, formatRelative, initials } from '@/lib/for
 import { FULFILLMENT_STATUS_LABELS, PAYMENT_STATUS_LABELS, ORDER_STATUS_LABELS } from '@/lib/constants'
 import { paymentTone, fulfillmentTone } from './OrdersListPage'
 import {
-  addOrderNote, cancelOrder, closeOrder, convertDraft, createDraft, fulfillOrder,
+  addOrderNote, cancelOrder, closeOrder, convertDraft, duplicateOrderAsDraft, fulfillOrder,
   markAsPaid, refundOrder, reopenOrder, setOrderTags,
 } from '@/services/ordersService'
 import { useCan } from '@/lib/permissions'
@@ -292,11 +292,12 @@ export default function OrderDetailPage() {
                   },
                 }),
               duplicateDraft: () =>
-                void createDraft({
-                  customerId: order.customerId,
-                  lineItems: order.lineItems.map((li) => ({ variantId: li.variantId, quantity: li.quantity })),
-                  note: order.note,
-                }).then(() => toast('Draft created from order')),
+                void duplicateOrderAsDraft(order.id)
+                  .then((draft) => {
+                    toast(order.isDraft ? 'Draft duplicated' : 'Draft created from order')
+                    navigate(`/orders/${draft.id}`)
+                  })
+                  .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed to duplicate', { tone: 'critical' })),
             })}
           />
         }

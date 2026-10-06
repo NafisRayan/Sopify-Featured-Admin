@@ -51,20 +51,33 @@ export async function logout(): Promise<void> {
   await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' })
 }
 
-export async function gqlRequest<T = any>(query: string, variables?: Record<string, unknown>): Promise<T> {
+/** Monotonic marker: bumped when a mutation RESPONSE arrives (≈ server commit).
+ * Snapshots whose REQUEST started before it may read pre-commit state (slow
+ * transactions) and must never hydrate over newer local/server state. */
+let lastMutationCommitAt = 0
+
+export async function gqlRequest<T = any>(query: string, variables?: Record<string, unknown>, timeoutMs = 90_000): Promise<T> {
   if (!API_URL) throw new Error('API_URL not configured')
-  const res = await fetch(`${API_URL}/graphql`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-    // Hard cap: a stalled socket (e.g. mid-restart backend) would otherwise hang
-    // the bootstrap reconcile guard (`refreshing`) forever.
-    signal: AbortSignal.timeout(90_000),
-  })
-  const json = await res.json()
-  if (json.errors?.length) throw new Error(json.errors[0].message)
-  return json.data as T
+  const isMutation = /^\s*mutation\b/.test(query)
+  try {
+    const res = await fetch(`${API_URL}/graphql`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables }),
+      // Hard cap: a stalled socket (e.g. mid-restart backend) would otherwise hang
+      // the bootstrap reconcile guard (`refreshing`) forever. Callers running long
+      // mutations (resetDemoData ≈ 80–300s server-side) pass a larger timeoutMs.
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    const json = (await res.json()) as { errors?: { message: string }[]; data?: T }
+    if (json.errors?.length) throw new Error(json.errors[0].message)
+    return json.data as T
+  } finally {
+    // Stamp even on parse/timeout errors: the server may have committed and we
+    // can't know — conservatively invalidate snapshots requested before now.
+    if (isMutation) lastMutationCommitAt = Date.now()
+  }
 }
 
 /** GraphQL literal for inline values (JSON-compatible with GraphQL input literals) */
@@ -101,9 +114,9 @@ export function syncMutation(mutation: string): void {
 
 const SNAPSHOT_QUERY = `{
   bootstrap {
-    products { id title descriptionHtml vendor productType category status tags collectionIds channels options { name values } variants { id productId title sku barcode price compareAtPrice costPerItem optionValues weightGrams imageId available } media { id productId type src alt } seo { title description handle } weightGrams requiresShipping trackQuantity createdAt updatedAt totalInventory }
+    products { id title descriptionHtml vendor productType category status tags collectionIds channels options { name values } variants { id productId title sku barcode price compareAtPrice costPerItem optionValues weightGrams imageId available tracked requiresShipping } media { id productId type src alt } seo { title description handle } weightGrams requiresShipping trackQuantity createdAt updatedAt totalInventory }
     customers { id firstName lastName email phone defaultAddress { firstName lastName address1 address2 city province country zip phone company } addresses { firstName lastName address1 address2 city province country zip phone company } tags note emailMarketingConsent taxExempt createdAt ordersCount totalSpent lastOrderAt }
-    orders { id name customerId email phone createdAt cancelledAt closedAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc restockedQty } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice discountCode { code amount } giftCardCode giftCardApplied transactions { id createdAt kind amount fee net gateway description } subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals }
+    orders { id name customerId email phone createdAt cancelledAt closedAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc restockedQty } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice discountCode { code amount } giftCardCode giftCardApplied transactions { id createdAt kind amount fee net gateway description } subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status restockMap } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft riskLevel riskSignals }
     abandonedCheckouts { id customerId email createdAt lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc restockedQty } total recoveryStatus }
     collections { id title descriptionHtml imageSrc handle type rules { column relation condition } rulesMatch productIds status seoTitle seoDescription publishedAt createdAt }
     locations { id name address1 city province country zip phone active createdAt }
@@ -144,28 +157,49 @@ const SNAPSHOT_QUERY = `{
   }
 }`
 
-let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let refreshTimer: ReturnType<typeof setTimeout> | undefined
 let refreshing = false
+let refreshQueued = false
 
 /** Debounced full reconcile from the server (server is source of truth). */
 export function scheduleRefresh(delayMs = 600): void {
   if (!IS_REMOTE) return
-  if (refreshTimer) clearTimeout(refreshTimer)
-  refreshTimer = setTimeout(() => void refreshFromServer(), delayMs)
+  clearTimeout(refreshTimer)
+  refreshTimer = globalThis.setTimeout(() => void refreshFromServer(), delayMs)
 }
 
 export async function refreshFromServer(): Promise<void> {
-  if (!IS_REMOTE || refreshing) return
+  if (!IS_REMOTE) return
+  if (refreshing) {
+    // A call arriving mid-flight must not be dropped — the caller may depend on
+    // fresh state (e.g. cancel-fulfillment reconciling inventory). Run another
+    // pass once the current one lands.
+    refreshQueued = true
+    return
+  }
   refreshing = true
+  const requestedAt = Date.now()
   try {
     const data = await gqlRequest<any>(SNAPSHOT_QUERY)
     if (data?.bootstrap) {
-      useStore.getState().hydrateRemote(data.bootstrap)
+      if (requestedAt < lastMutationCommitAt) {
+        // This snapshot was fetched before a later mutation was even SENT — it
+        // cannot reflect that mutation's server commit. Hydrating it would clobber
+        // the fresh optimistic patch with stale rows (seen as "fulfillment
+        // resurrects after cancel" under slow backends). Drop and refetch.
+        refreshQueued = true
+      } else {
+        useStore.getState().hydrateRemote(data.bootstrap)
+      }
     }
   } catch (e) {
     console.error('[api] bootstrap refresh failed', e)
   } finally {
     refreshing = false
+    if (refreshQueued) {
+      refreshQueued = false
+      void refreshFromServer()
+    }
   }
 }
 
@@ -187,14 +221,22 @@ export async function uploadMedia(file: File): Promise<{ url: string; name: stri
   return { url: dataUrl, name: file.name, sizeKb: Math.max(1, Math.round(file.size / 1024)) }
 }
 
-/** Server-first create: run mutation, return `{ field, userErrors }`. */
-export async function mutatePayload(field: string, mutation: string): Promise<{ entity: any; userErrors: any[] }> {
-  const data = await gqlRequest(`mutation _ { ${mutation} }`)
-  const payload: any = data?.[field] ?? {}
-  if (payload.userErrors?.length) throw new Error(payload.userErrors.map((e: any) => e.message).join('; '))
-  scheduleRefresh()
+/** Server-first mutation: run it, throw on userErrors, return the payload entity.
+ * Pass `{ refresh: false }` when the caller reconciles DIRECTLY afterwards
+ * (fulfill/cancel) — the debounced snapshot would just re-read the same
+ * post-commit state under Neon latency. */
+type UserError = { field: string[]; message: string }
+type MutationPayload = Record<string, unknown> & { userErrors?: UserError[] }
+
+export async function mutatePayload(field: string, mutation: string, opts?: { refresh?: boolean }): Promise<{ entity: unknown; userErrors: UserError[] }> {
+  const data = await gqlRequest<Record<string, MutationPayload>>(`mutation _ { ${mutation} }`)
+  const empty: MutationPayload = { userErrors: [] }
+  const payload: MutationPayload = data?.[field] ?? empty
+  const userErrors = payload.userErrors ?? []
+  if (userErrors.length > 0) throw new Error(userErrors.map((e) => e.message).join('; '))
+  if (opts?.refresh !== false) scheduleRefresh()
   const entityKey = Object.keys(payload).find((k) => k !== 'userErrors')
-  return { entity: entityKey ? payload[entityKey] : null, userErrors: payload.userErrors ?? [] }
+  return { entity: entityKey ? payload[entityKey] : null, userErrors }
 }
 
 /** Server-computed analytics for a date range (remote mode only; null offline). */

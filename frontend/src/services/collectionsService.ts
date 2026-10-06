@@ -2,7 +2,7 @@ import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
 import { slugify } from '@/lib/validation'
 import { delay } from '@/lib/delay'
-import { syncMutation, gqlLiteral } from './api'
+import { IS_REMOTE, mutatePayload, syncMutation, gqlLiteral } from './api'
 import type { Collection, CollectionRule, Product } from '@/types'
 
 /** Evaluate smart-collection rules against a product (live, §15) */
@@ -60,6 +60,55 @@ export async function createCollection(input: Partial<Collection>): Promise<Coll
     if (p && !p.collectionIds.includes(id)) store.patchProduct(pid, { collectionIds: [...p.collectionIds, id] })
   }
   return collection
+}
+
+/** Collection field-selection for server mutation payloads. */
+const COLLECTION_SELECTION = `id title descriptionHtml imageSrc handle type rules { column relation condition } rulesMatch productIds status seoTitle seoDescription publishedAt createdAt`
+
+/**
+ * Duplicate a collection (server-side when remote). The copy starts as a draft
+ * with the same products and rules; the handle gets a unique `-copy` suffix.
+ */
+export async function duplicateCollection(id: string): Promise<Collection> {
+  const store = getStore()
+  const source = store.collections.find((c) => c.id === id)
+  if (!source) throw new Error('Collection not found')
+  await delay(350)
+  const linkProducts = (col: Collection) => {
+    for (const pid of col.productIds) {
+      const p = store.products.find((x) => x.id === pid)
+      if (p && !p.collectionIds.includes(col.id)) store.patchProduct(pid, { collectionIds: [...p.collectionIds, col.id] })
+    }
+  }
+  if (IS_REMOTE) {
+    const { entity } = await mutatePayload('collectionDuplicate', `collectionDuplicate(id: ${gqlLiteral(id)}) { collection { ${COLLECTION_SELECTION} } userErrors { field message } }`)
+    if (!entity) throw new Error('Duplicate failed')
+    const copy = entity as Collection
+    store.addCollection(copy)
+    linkProducts(copy)
+    return copy
+  }
+  const base = slugify(source.handle || source.title) || 'collection'
+  let handle = `${base}-copy`
+  let n = 2
+  while (store.collections.some((c) => c.handle === handle)) {
+    handle = `${base}-copy-${n}`
+    n += 1
+  }
+  const copy: Collection = {
+    ...source,
+    id: uid('col'),
+    title: `${source.title} (copy)`,
+    handle,
+    status: 'draft',
+    publishedAt: undefined,
+    productIds: [...source.productIds],
+    rules: source.rules.map((r) => ({ ...r })),
+    createdAt: new Date().toISOString(),
+  }
+  store.addCollection(copy)
+  linkProducts(copy)
+  return copy
 }
 
 export async function updateCollection(id: string, patch: Partial<Collection>): Promise<void> {

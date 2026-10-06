@@ -56,7 +56,7 @@ export class OrdersService {
     return rows.map((o) => {
       const gateway = (o.paymentGateway as string) ?? 'manual'
       const mapped = mapOrder(o, mapOrderRisk(riskMap.get(o.id as string)))
-      mapped.fulfillments = parseJson<Record<string, unknown>[]>(mapped.fulfillments as string, []).map((f) => ({ ...f, events: (f.events as unknown[]) ?? [] }))
+      mapped.fulfillments = parseJson<Record<string, unknown>[]>(mapped.fulfillments as unknown as string, []).map((f) => ({ ...f, events: (f.events as unknown[]) ?? [], restockMap: f.restockMap ?? null }))
       mapped.transactions = (txnMap.get(o.id as string) ?? []).map((t) => ({
         id: t.id,
         createdAt: t.at,
@@ -116,7 +116,7 @@ export class OrdersService {
 
   async analytics(from: Date, to: Date): Promise<any> {
     const rows = await this.prisma.order.findMany({
-      where: { createdAt: { gte: from, lte: to }, isDraft: false },
+    where: { createdAt: { gte: from, lte: to }, isDraft: false, status: { not: 'cancelled' } },
     })
     const ordersCount = rows.length
     let grossSales = 0
@@ -130,7 +130,7 @@ export class OrdersService {
       const discount = parseJson<{ amount?: number } | null>(o.discountCode as string, null)?.amount ?? 0
       const refundList = parseJson<{ amount: number }[]>(o.refunds as string, [])
       const gift = parseJson<{ amount?: number } | null>(o.giftCard as string, null)?.amount ?? 0
-      grossSales += o.subtotal + o.shippingPrice
+      grossSales += o.subtotal
       discounts += discount
       refunds += refundList.reduce((s, r) => s + r.amount, 0)
       shipping += o.shippingPrice
@@ -221,8 +221,19 @@ export class OrdersService {
     return roundMoney(taxableBase * rate)
   }
 
+  /** Tracked variants gate stock checks/movement; untracked (e.g. digital) behave as infinite. */
+  private async variantTracked(variantId: string): Promise<boolean> {
+    const product = await this.prisma.product.findFirst({
+      where: { variants: { array_contains: [{ id: variantId }] } },
+    })
+    if (!product) return true
+    const variant = parseJson<Record<string, unknown>[]>(product.variants as string, []).find((v) => v.id === variantId)
+    return variant ? variant.tracked !== false : true
+  }
+
   /** Read-only check that enough aggregate available exists before reserving. */
   private async assertCanReserve(variantId: string, quantity: number): Promise<void> {
+    if (!(await this.variantTracked(variantId))) return
     const sum = await this.prisma.inventoryLevel.aggregate({
       where: { variantId },
       _sum: { available: true },
@@ -235,6 +246,7 @@ export class OrdersService {
 
   /** Move available → committed across locations. Throws if aggregate on-hand is insufficient. */
   private async reserveQuantity(variantId: string, quantity: number, reason: string): Promise<void> {
+    if (!(await this.variantTracked(variantId))) return
     const levels = await this.prisma.inventoryLevel.findMany({
       where: { variantId, available: { gt: 0 } },
       orderBy: { available: 'desc' },
@@ -264,6 +276,7 @@ export class OrdersService {
 
   /** Read-only check mirroring consumeForFulfill preconditions. */
   private async assertCanFulfill(variantId: string, quantity: number, locationId: string): Promise<void> {
+    if (!(await this.variantTracked(variantId))) return
     const target = await this.prisma.inventoryLevel.findUnique({
       where: { variantId_locationId: { variantId, locationId } },
     })
@@ -288,6 +301,7 @@ export class OrdersService {
     reason: string,
     preferredLocationId?: string,
   ): Promise<void> {
+    if (!(await this.variantTracked(variantId))) return
     let remaining = quantity
     const apply = async (locationId: string, committed: number, available: number, rel: number) => {
       const newAvail = available + rel
@@ -327,13 +341,16 @@ export class OrdersService {
    * Fulfill consumes reserved units at the ship-from location.
    * Never steals committed from another location and also decrements available here.
    * Legacy (no reservation anywhere): decrement available at the ship-from location only.
+   * Returns how the units left stock so fulfillmentCancel can restore exactly:
+   * 'committed' (reservation consumed) | 'available' (legacy unreserved) | 'none' (untracked).
    */
   private async consumeForFulfill(
     variantId: string,
     quantity: number,
     locationId: string,
     reason: string,
-  ): Promise<void> {
+  ): Promise<'committed' | 'available' | 'none'> {
+    if (!(await this.variantTracked(variantId))) return 'none'
     const target = await this.prisma.inventoryLevel.findUnique({
       where: { variantId_locationId: { variantId, locationId } },
     })
@@ -349,7 +366,7 @@ export class OrdersService {
           resultingAvailable: target.available, reason, createdAt: new Date(), author: actorName(),
         },
       })
-      return
+      return 'committed'
     }
     const sum = await this.prisma.inventoryLevel.aggregate({
       where: { variantId },
@@ -372,6 +389,7 @@ export class OrdersService {
         resultingAvailable: newAvail, reason, createdAt: new Date(), author: actorName(),
       },
     })
+    return 'available'
   }
 
   async markAsPaid(id: string): Promise<any> {
@@ -544,7 +562,7 @@ export class OrdersService {
       throw new Error('At least one line item is required to fulfill')
     }
     const lineItems = parseJson<{ id: string; variantId: string; quantity: number }[]>(order.lineItems as string, [])
-    const fulfillments = parseJson<{ id: string; createdAt: string; lineItemIds: string[]; trackingNumber?: string; carrier?: string; locationId: string; status: string; events?: { id: string; status: string; message?: string; occurredAt: string }[] }[]>(order.fulfillments as string, [])
+    const fulfillments = parseJson<{ id: string; createdAt: string; lineItemIds: string[]; trackingNumber?: string; carrier?: string; locationId: string; status: string; events?: { id: string; status: string; message?: string; occurredAt: string }[]; restockMap?: Record<string, 'committed' | 'available' | 'none'> }[]>(order.fulfillments as string, [])
     const alreadyFulfilled = new Set(fulfillments.flatMap((f) => f.lineItemIds))
     for (const lid of input.lineItemIds) {
       if (alreadyFulfilled.has(lid)) throw new Error(`Line item ${lid} is already fulfilled`)
@@ -553,9 +571,10 @@ export class OrdersService {
       if (!input.lineItemIds.includes(li.id)) continue
       await this.assertCanFulfill(li.variantId, li.quantity, input.locationId)
     }
+    const restockMap: Record<string, 'committed' | 'available' | 'none'> = {}
     for (const li of lineItems) {
       if (!input.lineItemIds.includes(li.id)) continue
-      await this.consumeForFulfill(li.variantId, li.quantity, input.locationId, `Fulfilled order ${order.name}`)
+      restockMap[li.id] = await this.consumeForFulfill(li.variantId, li.quantity, input.locationId, `Fulfilled order ${order.name}`)
     }
 
     fulfillments.push({
@@ -567,6 +586,7 @@ export class OrdersService {
       locationId: input.locationId,
       status: 'success',
       events: [],
+      restockMap,
     })
     const newFulfillmentStatus = this.recomputeFulfillmentStatus({ lineItems: lineItems as never, fulfillments: fulfillments as never })
     const data: Record<string, unknown> = { fulfillments: toJson(fulfillments), fulfillmentStatus: newFulfillmentStatus }
@@ -603,29 +623,34 @@ export class OrdersService {
     if (!order) throw new Error('Fulfillment not found')
     if (order.isDraft) throw new Error('Cannot cancel a fulfillment on a draft order')
     if (order.status === 'cancelled') throw new Error('Cannot cancel a fulfillment on a cancelled order')
-    const fulfillments = parseJson<{ id: string; createdAt: string; lineItemIds: string[]; trackingNumber?: string; carrier?: string; locationId: string; status: string }[]>(order.fulfillments as string, [])
+    const fulfillments = parseJson<{ id: string; createdAt: string; lineItemIds: string[]; trackingNumber?: string; carrier?: string; locationId: string; status: string; restockMap?: Record<string, 'committed' | 'available' | 'none'> }[]>(order.fulfillments as string, [])
     const index = fulfillments.findIndex((f) => f.id === fulfillmentId)
     if (index < 0) throw new Error('Fulfillment not found')
     const fulfillment = fulfillments[index]!
     const lineItems = parseJson<{ id: string; variantId: string; quantity: number }[]>(order.lineItems as string, [])
 
-    // Reverse stock: inverse of consumeForFulfill — increment available at the ship-from location.
+    // Reverse stock as the exact inverse of consumeForFulfill, using the per-line restock
+    // kind recorded at fulfill time (legacy rows without a map fall back to 'available').
     for (const lid of fulfillment.lineItemIds) {
       const li = lineItems.find((x) => x.id === lid)
       if (!li) continue
+      const kind = fulfillment.restockMap?.[lid] ?? 'available'
+      if (kind === 'none') continue
       const level = await this.prisma.inventoryLevel.findUnique({
         where: { variantId_locationId: { variantId: li.variantId, locationId: fulfillment.locationId } },
       })
       if (!level) continue
-      const newAvail = level.available + li.quantity
+      const change = kind === 'committed' ? 0 : li.quantity
+      const newCommitted = kind === 'committed' ? level.committed + li.quantity : level.committed
+      const newAvail = kind === 'committed' ? level.available : level.available + li.quantity
       await this.prisma.inventoryLevel.update({
         where: { variantId_locationId: { variantId: level.variantId, locationId: level.locationId } },
-        data: { available: newAvail },
+        data: { available: newAvail, committed: newCommitted },
       })
       await this.prisma.inventoryHistory.create({
         data: {
           id: uid('ih'), variantId: level.variantId, locationId: level.locationId,
-          change: li.quantity, resultingAvailable: newAvail, reason: 'fulfillment_cancelled',
+          change, resultingAvailable: newAvail, reason: 'fulfillment_cancelled',
           createdAt: new Date(), author: actorName(),
         },
       })
@@ -818,6 +843,10 @@ export class OrdersService {
     }
     if (projected.length === 0) throw new Error('An order needs at least one item')
 
+    // Order rows carry no location; existing fulfillments do — that is the
+    // location context for B2B price-list selection on added lines.
+    const orderLocationId =
+      parseJson<{ locationId?: string }[]>(order.fulfillments as string, []).find((f) => f.locationId)?.locationId ?? null
     const b2b = new Map<string, { fixedPrice: number | null; discountPercent: number }>()
 
     for (const add of added) {
@@ -850,7 +879,7 @@ export class OrdersService {
       const pricing =
         b2b.get(add.variantId) ??
         (await (async () => {
-          const p = await b2bPricing(this.prisma, order.customerId, add.variantId)
+          const p = await b2bPricing(this.prisma, order.customerId, add.variantId, orderLocationId)
           b2b.set(add.variantId, p)
           return p
         })())
@@ -998,6 +1027,7 @@ export class OrdersService {
   async closeReturn(id: string, markRefunded: boolean): Promise<any> {
     const ret = await this.prisma.returnRecord.findUnique({ where: { id } })
     if (!ret) throw new Error('Return not found')
+    if (['requested', 'open'].includes(ret.status)) throw new Error('Approve the return before closing it')
     if (['declined', 'canceled', 'cancelled'].includes(ret.status)) {
       throw new Error('Cannot close a declined or canceled return')
     }
@@ -1569,6 +1599,7 @@ export class OrdersService {
         taxTotal: source.taxTotal,
         total: source.total,
         discountCode: source.discountCode,
+        giftCard: source.giftCard,
         currency: source.currency,
         tags: source.tags,
         note: source.note,

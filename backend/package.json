@@ -9,7 +9,7 @@
     "start": "prisma generate && nest start",
     "start:dev": "prisma generate && nest start --watch",
     "start:prod": "node dist/main.js",
-    "test": "node --import tsx --test src/prisma/prisma.service.test.ts src/common/relay-and-goi.test.ts",
+    "test": "node --import tsx --test src/prisma/prisma.service.test.ts src/common/relay-and-goi.test.ts src/modules/customers/b2b-merge.test.ts",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "seed": "tsx prisma/seed.ts",

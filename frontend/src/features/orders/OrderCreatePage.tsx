@@ -115,7 +115,9 @@ export default function OrderCreatePage() {
             'draftOrderConvert',
             `draftOrderConvert(id: ${JSON.stringify(draft.id)}) { order { id paymentStatus } userErrors { field message } }`,
           )
-          const paymentStatus = conv.entity?.paymentStatus ?? conv.entity?.order?.paymentStatus ?? 'pending'
+          // draftOrderConvert payload: entity is the order (or a wrapper) — read paymentStatus off whichever shape came back
+          const convEntity = conv.entity as { paymentStatus?: string; order?: { paymentStatus?: string } } | null
+          const paymentStatus = convEntity?.paymentStatus ?? convEntity?.order?.paymentStatus ?? 'pending'
           if (paymentStatus !== 'paid') {
             await mutatePayload('orderMarkAsPaid', `orderMarkAsPaid(id: ${JSON.stringify(draft.id)}) { order { id } userErrors { field message } }`)
           }

@@ -59,6 +59,9 @@ export interface FamilyDef {
   sizes?: string[]
   colorCount?: number
   description: string
+  /** Digital products ship nothing and track no stock (variant rows mirror these). */
+  requiresShipping?: boolean
+  trackQuantity?: boolean
 }
 
 export const VENDORS = ['Northstar Goods', 'Alder & Oak', 'Trailhead Supply', 'Hearthstone', 'Meridian Basics']
@@ -396,6 +399,15 @@ export const FAMILIES: FamilyDef[] = [
     category: 'Apparel & Accessories > Clothing Accessories > Socks', price: 16, cost: 5, weight: 70,
     tags: ['wool', 'essential'], colors: ['Charcoal', 'Oat', 'Rust'],
     description: '<p>Everyday merino crew socks — temperature-regulating, odor-resistant, cushioned heel. One size.</p>',
+  },
+  {
+    slug: 'yoga-program-video', title: 'Yoga Flow Program — Digital Download', type: 'Digital', vendor: 'Northstar Goods',
+    category: 'Digital Goods > Fitness & Yoga', price: 19, cost: 0, weight: 0,
+    tags: ['digital', 'fitness', 'new-arrival'],
+    requiresShipping: false,
+    trackQuantity: false,
+    description:
+      '<p>A 4-week video yoga program with downloadable class plans and a printable pose guide. Delivered instantly to your inbox — nothing ships.</p>',
   },
 ]
 

@@ -88,8 +88,10 @@ FAMILIES.forEach((f) => {
       compareAtPrice: f.compareAt,
       costPerItem: f.cost,
       optionValues: ov,
-      weightGrams: f.weight,
       imageId: media[0]!.id,
+      requiresShipping: f.requiresShipping ?? true,
+      tracked: f.trackQuantity ?? true,
+      weightGrams: f.weight,
       available: true,
     }
     variants.push(variant)
@@ -114,8 +116,8 @@ FAMILIES.forEach((f) => {
     media,
     seo: { title: f.title, description: f.description.replace(/<[^>]+>/g, '').slice(0, 150), handle: f.slug },
     weightGrams: f.weight,
-    requiresShipping: true,
-    trackQuantity: true,
+    requiresShipping: f.requiresShipping ?? true,
+    trackQuantity: f.trackQuantity ?? true,
     createdAt,
     updatedAt: iso(rng.dateWithin(40, true)),
   })
@@ -238,7 +240,7 @@ function makeLineItems(count: number): OrderLineItem[] {
       quantity: qty,
       price: v.price,
       totalDiscount: discount,
-      requiresShipping: true,
+      requiresShipping: prod.requiresShipping,
       imageSrc: prod.media[0]?.src,
     }
   })
@@ -422,6 +424,8 @@ const inventoryHistory: InventoryHistoryEntry[] = []
 const fulfillmentLocations = locations.slice(0, 4)
 
 for (const v of allVariants) {
+  const product = products.find((p) => p.id === v.productId)!
+  if (!product.trackQuantity) continue // digital products carry no stock rows
   const stockedAt = [fulfillmentLocations[0]!, rng.chance(0.55) ? rng.pick(fulfillmentLocations.slice(1)) : null].filter(Boolean) as Location[]
   for (const loc of stockedAt) {
     inventoryLevels.push({

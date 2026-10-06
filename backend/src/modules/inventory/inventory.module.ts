@@ -135,18 +135,24 @@ export class InventoryService {
     if (!dest) dest = await this.prisma.inventoryLevel.create({ data: { variantId: input.variantId, locationId: input.toLocationId, available: 0, committed: 0, unavailable: 0 } })
 
     const srcAvailable = source.available - input.quantity
-    await this.prisma.inventoryLevel.update({
-      where: { variantId_locationId: { variantId: input.variantId, locationId: input.fromLocationId } },
-      data: { available: srcAvailable },
-    })
-    await this.log(input.variantId, input.fromLocationId, -input.quantity, srcAvailable, input.reason ?? `Moved to ${input.toLocationId}`)
-
     const dstAvailable = dest.available + input.quantity
-    await this.prisma.inventoryLevel.update({
-      where: { variantId_locationId: { variantId: input.variantId, locationId: input.toLocationId } },
-      data: { available: dstAvailable },
-    })
-    await this.log(input.variantId, input.toLocationId, input.quantity, dstAvailable, input.reason ?? `Moved from ${input.fromLocationId}`)
+    // Both legs move atomically — a crash can no longer drop units between locations.
+    await this.prisma.$transaction([
+      this.prisma.inventoryLevel.update({
+        where: { variantId_locationId: { variantId: input.variantId, locationId: input.fromLocationId } },
+        data: { available: srcAvailable },
+      }),
+      this.prisma.inventoryHistory.create({
+        data: { id: uid('ih'), variantId: input.variantId, locationId: input.fromLocationId, change: -input.quantity, resultingAvailable: srcAvailable, reason: input.reason ?? `Moved to ${input.toLocationId}`, createdAt: new Date(), author: actorName() },
+      }),
+      this.prisma.inventoryLevel.update({
+        where: { variantId_locationId: { variantId: input.variantId, locationId: input.toLocationId } },
+        data: { available: dstAvailable },
+      }),
+      this.prisma.inventoryHistory.create({
+        data: { id: uid('ih'), variantId: input.variantId, locationId: input.toLocationId, change: input.quantity, resultingAvailable: dstAvailable, reason: input.reason ?? `Moved from ${input.fromLocationId}`, createdAt: new Date(), author: actorName() },
+      }),
+    ])
 
     await this.logActivity('Moved inventory', 'inventory', input.variantId)
     return [

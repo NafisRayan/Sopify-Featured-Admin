@@ -82,54 +82,57 @@ export async function reseed(prisma: PrismaClient, dataDir?: string): Promise<Re
   const priceLists = load<Row[]>('price-lists')
   const savedSearches = load<Row[]>('saved-searches')
 
-  await prisma.$transaction([
-    prisma.savedSearch.deleteMany(),
-    prisma.priceListEntry.deleteMany(),
-    prisma.priceList.deleteMany(),
-    prisma.metafield.deleteMany(),
-    prisma.metafieldDefinition.deleteMany(),
-    prisma.metaobjectEntry.deleteMany(),
-    prisma.metaobjectDefinition.deleteMany(),
-    prisma.balanceTransaction.deleteMany(),
-    prisma.payout.deleteMany(),
-    prisma.giftCard.deleteMany(),
-    prisma.transfer.deleteMany(),
-    prisma.inventoryHistory.deleteMany(),
-    prisma.inventoryLevel.deleteMany(),
-    prisma.orderEdit.deleteMany(),
-    prisma.orderRisk.deleteMany(),
-    prisma.returnRecord.deleteMany(),
-    prisma.activityEntry.deleteMany(),
-    prisma.notification.deleteMany(),
-    prisma.task.deleteMany(),
-    prisma.abandonedCheckout.deleteMany(),
-    prisma.order.deleteMany(),
-    prisma.company.deleteMany(),
-    prisma.segment.deleteMany(),
-    prisma.redirect.deleteMany(),
-    prisma.locale.deleteMany(),
-    prisma.marketCountry.deleteMany(),
-    prisma.appEntry.deleteMany(),
-    prisma.staffMember.deleteMany(),
-    prisma.themeLibraryEntry.deleteMany(),
-    prisma.storePage.deleteMany(),
-    prisma.blogPost.deleteMany(),
-    prisma.fileAsset.deleteMany(),
-    prisma.navMenu.deleteMany(),
-    prisma.discount.deleteMany(),
-    prisma.campaign.deleteMany(),
-    prisma.collection.deleteMany(),
-    prisma.location.deleteMany(),
-    prisma.customer.deleteMany(),
-    prisma.product.deleteMany(),
-    prisma.storeSettings.deleteMany(),
-    prisma.shopCounter.deleteMany(),
-    prisma.theme.deleteMany(),
-    prisma.plan.deleteMany(),
-  ])
+  // W3: wipe and reload are ONE interactive transaction — a failed insert can no
+  // longer leave a half-emptied store behind. The reseed holds this transaction for
+  // its full duration (~80s over Neon), hence the explicit long timeout.
+  await prisma.$transaction(
+    async (trx) => {
+      await trx.savedSearch.deleteMany()
+      await trx.priceListEntry.deleteMany()
+      await trx.priceList.deleteMany()
+      await trx.metafield.deleteMany()
+      await trx.metafieldDefinition.deleteMany()
+      await trx.metaobjectEntry.deleteMany()
+      await trx.metaobjectDefinition.deleteMany()
+      await trx.balanceTransaction.deleteMany()
+      await trx.payout.deleteMany()
+      await trx.giftCard.deleteMany()
+      await trx.transfer.deleteMany()
+      await trx.inventoryHistory.deleteMany()
+      await trx.inventoryLevel.deleteMany()
+      await trx.orderEdit.deleteMany()
+      await trx.orderRisk.deleteMany()
+      await trx.returnRecord.deleteMany()
+      await trx.activityEntry.deleteMany()
+      await trx.notification.deleteMany()
+      await trx.task.deleteMany()
+      await trx.abandonedCheckout.deleteMany()
+      await trx.order.deleteMany()
+      await trx.company.deleteMany()
+      await trx.segment.deleteMany()
+      await trx.redirect.deleteMany()
+      await trx.locale.deleteMany()
+      await trx.marketCountry.deleteMany()
+      await trx.appEntry.deleteMany()
+      await trx.staffMember.deleteMany()
+      await trx.themeLibraryEntry.deleteMany()
+      await trx.storePage.deleteMany()
+      await trx.blogPost.deleteMany()
+      await trx.fileAsset.deleteMany()
+      await trx.navMenu.deleteMany()
+      await trx.discount.deleteMany()
+      await trx.campaign.deleteMany()
+      await trx.collection.deleteMany()
+      await trx.location.deleteMany()
+      await trx.customer.deleteMany()
+      await trx.product.deleteMany()
+      await trx.storeSettings.deleteMany()
+      await trx.shopCounter.deleteMany()
+      await trx.theme.deleteMany()
+      await trx.plan.deleteMany()
 
   // Loosely typed batch writer: row payloads come from trusted demo JSON.
-  const tx = prisma as unknown as {
+  const tx = trx as unknown as {
     [model: string]: { createMany(a: { data: unknown }): Promise<unknown>; create(a: { data: unknown }): Promise<unknown> }
   }
   const many = (model: string, data: unknown[]) => tx[model].createMany({ data })
@@ -240,7 +243,11 @@ export async function reseed(prisma: PrismaClient, dataDir?: string): Promise<Re
     ),
   )
   await many('savedSearch', savedSearches.map((s) => ({ ...strip(s, 'createdAt'), createdAt: at(s.createdAt) })))
+    },
+    { timeout: 300_000, maxWait: 10_000 },
+  )
 
+  // Post-commit: derive the order-number counter from the freshly committed rows.
   const orderRows = await prisma.order.findMany({ where: { isDraft: false }, select: { name: true } })
   let maxOrderNum = 1000
   for (const o of orderRows) {

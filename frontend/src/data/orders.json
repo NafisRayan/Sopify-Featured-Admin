@@ -11783,6 +11783,92 @@
   "paymentGateway": "Apple Pay"
  },
  {
+  "id": "o_1123",
+  "name": "#1123",
+  "customerId": "c_119",
+  "email": "ava.larsen@example.com",
+  "phone": "(699) 555-2634",
+  "createdAt": "2026-09-28T15:42:11.302Z",
+  "paymentStatus": "paid",
+  "fulfillmentStatus": "unfulfilled",
+  "status": "open",
+  "channel": "Online Store",
+  "lineItems": [
+   {
+    "id": "li_2a9f",
+    "productId": "p_yoga-program-video",
+    "variantId": "p_yoga-program-video_v1",
+    "title": "Yoga Flow Program — Digital Download",
+    "variantTitle": "",
+    "sku": "YPV63",
+    "quantity": 1,
+    "price": 19,
+    "totalDiscount": 0,
+    "requiresShipping": false,
+    "imageSrc": "/images/products/yoga-program-video.svg"
+   },
+   {
+    "id": "li_2a9g",
+    "productId": "p_ceramic-coffee-mug",
+    "variantId": "p_ceramic-coffee-mug_v1",
+    "title": "Ceramic Coffee Mug",
+    "variantTitle": "Cream",
+    "sku": "CCM14-CREA",
+    "quantity": 2,
+    "price": 18,
+    "totalDiscount": 0,
+    "requiresShipping": true,
+    "imageSrc": "/images/products/ceramic-coffee-mug.svg"
+   }
+  ],
+  "shippingAddress": {
+   "firstName": "Ava",
+   "lastName": "Larsen",
+   "address1": "692 Cedar Ln",
+   "city": "Austin",
+   "province": "TX",
+   "country": "United States",
+   "zip": "73301",
+   "phone": "(699) 555-2634"
+  },
+  "billingAddress": {
+   "firstName": "Ava",
+   "lastName": "Larsen",
+   "address1": "692 Cedar Ln",
+   "city": "Austin",
+   "province": "TX",
+   "country": "United States",
+   "zip": "73301",
+   "phone": "(699) 555-2634"
+  },
+  "shippingTitle": "Standard shipping",
+  "shippingPrice": 6.99,
+  "subtotal": 55.0,
+  "taxTotal": 4.4,
+  "total": 66.39,
+  "currency": "USD",
+  "tags": [],
+  "timeline": [
+   {
+    "id": "ev_2a9h",
+    "createdAt": "2026-09-28T15:42:11.302Z",
+    "type": "created",
+    "message": "Order placed by customer from Online Store",
+    "author": "Northstar Goods"
+   },
+   {
+    "id": "ev_2a9i",
+    "createdAt": "2026-09-28T15:47:05.881Z",
+    "type": "payment",
+    "message": "Payment of $66.39 captured via Shopify Payments",
+    "author": "Northstar Goods"
+   }
+  ],
+  "fulfillments": [],
+  "refunds": [],
+  "paymentGateway": "Shopify Payments"
+ },
+ {
   "id": "o_draft1",
   "name": "#D1000",
   "customerId": "c_161",

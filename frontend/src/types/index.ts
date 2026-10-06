@@ -28,6 +28,9 @@ export interface ProductVariant {
   optionValues: Record<string, string> // option name -> value, e.g. { Color: 'Black' }
   weightGrams?: number
   imageId?: ID
+  // Variant-level overrides persisted on the variant JSON row (backend semantics)
+  requiresShipping?: boolean
+  tracked?: boolean
   available: boolean
 }
 
@@ -156,6 +159,8 @@ export interface Fulfillment {
   locationId: ID
   status: 'success' | 'canceled'
   events?: FulfillmentEvent[]
+  /** `Record<lineItemId, 'committed' | 'available' | 'none'>` recorded at fulfill time (scalar JSON; legacy rows a JSON string) */
+  restockMap?: string | Record<string, 'committed' | 'available' | 'none'>
 }
 
 export interface Refund {

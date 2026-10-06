@@ -1,7 +1,7 @@
 import { getStore } from '@/store/useStore'
 import { variantLevelAt } from '@/store/selectors'
 import { uid } from '@/lib/id'
-import { syncMutation, gqlLiteral, mutatePayload, IS_REMOTE } from './api'
+import { syncMutation, gqlLiteral, mutatePayload, IS_REMOTE, refreshFromServer } from './api'
 import { delay } from '@/lib/delay'
 import { roundMoney } from '@/lib/money'
 import { CURRENT_USER } from '@/lib/constants'
@@ -16,8 +16,10 @@ import type {
  *  - refund → refund record, payment status, optional restock, timeline event
  *  - cancel → status change, reserved stock released, timeline event
  */
-
 const author = CURRENT_USER.name
+
+/** Order field-selection shared by server draft/order mutations. */
+export const ORDER_SELECTION = `id name customerId email phone createdAt closedAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc restockedQty } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice discountCode { code amount } giftCardCode giftCardApplied subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status restockMap } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft`
 
 /** Release committed stock across all locations (mirrors backend releaseCommitted). */
 export function releaseCommittedLocal(variantId: string, quantity: number): void {
@@ -48,9 +50,10 @@ function addTimeline(orderId: string, type: TimelineEventType, message: string):
 }
 
 /** Orders are queryable through the store hook; these helpers support services */
-function recomputeFulfillmentStatus(order: Order): FulfillmentStatus {
+export function recomputeFulfillmentStatus(order: Order): FulfillmentStatus {
   const fulfillable = order.lineItems.filter((li) => li.requiresShipping)
-  if (fulfillable.length === 0) return 'unfulfilled'
+  // Orders with nothing shippable (all-digital) count as fulfilled, like the backend.
+  if (fulfillable.length === 0) return order.lineItems.length > 0 ? 'fulfilled' : 'unfulfilled'
   const fulfilledIds = new Set(order.fulfillments.flatMap((f) => f.lineItemIds))
   const allFulfilled = fulfillable.every((li) => fulfilledIds.has(li.id))
   const someFulfilled = fulfillable.some((li) => fulfilledIds.has(li.id))
@@ -83,17 +86,51 @@ export async function fulfillOrder(input: FulfillInput): Promise<void> {
   if (order.status === 'cancelled' || order.status === 'closed' || order.paymentStatus === 'refunded' || order.fulfillmentStatus === 'fulfilled') {
     throw new Error('Cannot fulfill order in current status')
   }
-
   const alreadyFulfilled = new Set(order.fulfillments.flatMap((f) => f.lineItemIds))
   for (const lid of input.lineItemIds) {
     if (alreadyFulfilled.has(lid)) throw new Error(`Line item ${lid} is already fulfilled`)
   }
+  if (IS_REMOTE) {
+    // The server owns fulfillment ids and the stock ledger. Await the mutation and
+    // patch from the returned order — minting a local uid('ff') here would create an
+    // id fulfillmentCancel can never see until the next hydrate.
+    const { entity, userErrors } = await mutatePayload(
+      'orderFulfill',
+      `orderFulfill(input: { orderId: ${gqlLiteral(input.orderId)}, lineItemIds: ${gqlLiteral(input.lineItemIds)}, locationId: ${gqlLiteral(input.locationId)}, trackingNumber: ${input.trackingNumber ? gqlLiteral(input.trackingNumber) : 'null'}, carrier: ${input.carrier ? gqlLiteral(input.carrier) : 'null'}, notifyCustomer: ${Boolean(input.notifyCustomer)} }) { order { ${ORDER_SELECTION} } userErrors { field message } }`,
+      { refresh: false }, // the direct refreshFromServer below replaces the debounce
+    )
+    if (userErrors.length > 0) throw new Error(userErrors.map((e) => e.message).join('; '))
+    if (!entity) throw new Error('Fulfill failed')
+    getStore().patchOrder(input.orderId, entity as Partial<Order>)
+    // Direct (not debounced) so the hydrate can only start after the server commit —
+    // a debounced fetch could begin before orderFulfill commits and hydrate stale
+    // inventory over the patch. Queued-retry keeps an in-flight refresh safe.
+    void refreshFromServer()
+    return
+  }
 
+  // How each fulfilled line left stock, so cancelFulfillment can restore it exactly.
+  // Matches the backend gate exactly: tracking is decided by the VARIANT's
+  // tracked flag alone (generator stamps variants from product.trackQuantity).
+  const variantTracked = (variantId: string): boolean => {
+    const product = store.products.find((p) => p.variants.some((v) => v.id === variantId))
+    const variant = product?.variants.find((v) => v.id === variantId)
+    return variant?.tracked !== false
+  }
+  const restockMap: Record<string, 'committed' | 'available' | 'none'> = {}
   for (const li of order.lineItems) {
     if (!input.lineItemIds.includes(li.id)) continue
+    if (!variantTracked(li.variantId)) {
+      restockMap[li.id] = 'none'
+      continue
+    }
     const targetLevel = variantLevelAt(li.variantId, input.locationId)
     if (!targetLevel) throw new Error(`No inventory level for variant at location ${input.locationId}`)
-    if (targetLevel.committed >= li.quantity) continue
+    if (targetLevel.committed >= li.quantity) {
+      restockMap[li.id] = 'committed'
+      continue
+    }
+    restockMap[li.id] = 'available'
     const committedAnywhere = store.inventoryLevels
       .filter((l) => l.variantId === li.variantId)
       .reduce((s, l) => s + l.committed, 0)
@@ -105,9 +142,9 @@ export async function fulfillOrder(input: FulfillInput): Promise<void> {
     }
   }
   for (const li of order.lineItems) {
-    if (!input.lineItemIds.includes(li.id)) continue
+    if (!input.lineItemIds.includes(li.id) || restockMap[li.id] === 'none') continue
     const targetLevel = variantLevelAt(li.variantId, input.locationId)!
-    if (targetLevel.committed >= li.quantity) {
+    if (restockMap[li.id] === 'committed') {
       store.upsertInventoryLevel({
         ...targetLevel,
         committed: targetLevel.committed - li.quantity,
@@ -125,6 +162,7 @@ export async function fulfillOrder(input: FulfillInput): Promise<void> {
     carrier: input.carrier || undefined,
     locationId: input.locationId,
     status: 'success',
+    restockMap: JSON.stringify(restockMap),
   }
   const updated: Partial<Order> = {
     fulfillments: [...order.fulfillments, fulfillment],
@@ -376,7 +414,7 @@ function buildDraft(input: DraftInput): Order {
       quantity: li.quantity,
       price: roundMoney(variant.price * priceMultiplier),
       totalDiscount: 0,
-      requiresShipping: true,
+      requiresShipping: product.requiresShipping,
       imageSrc: product.media[0]?.src,
     }
   })
@@ -483,11 +521,50 @@ function buildDraft(input: DraftInput): Order {
 export async function createDraft(input: DraftInput): Promise<Order> {
   await delay(350)
   if (IS_REMOTE) {
-    const { entity } = await mutatePayload('draftOrderCreate', `draftOrderCreate(customerId: ${gqlLiteral(input.customerId)}, items: ${gqlLiteral(input.lineItems)}, note: ${gqlLiteral(input.note ?? null)}, tags: ${gqlLiteral(input.tags ?? [])}, shippingPrice: ${input.shippingPrice ?? 6.99}, discountAmount: ${input.discountAmount ?? 0}, discountCode: ${gqlLiteral(input.discountCode ?? null)}, giftCardCode: ${gqlLiteral(input.giftCardCode ?? null)}) { order { id name customerId email phone createdAt paymentStatus fulfillmentStatus status channel lineItems { id productId variantId title variantTitle sku quantity price totalDiscount requiresShipping imageSrc } shippingAddress { firstName lastName address1 address2 city province country zip phone company } billingAddress { firstName lastName address1 address2 city province country zip phone company } shippingTitle shippingPrice discountCode { code amount } giftCardCode giftCardApplied subtotal taxTotal total currency tags note timeline { id createdAt type message author } fulfillments { id createdAt lineItemIds trackingNumber carrier locationId status } refunds { id createdAt amount reason lineItemIds restock } paymentGateway isDraft } userErrors { field message } } }`)
+    const { entity } = await mutatePayload('draftOrderCreate', `draftOrderCreate(customerId: ${gqlLiteral(input.customerId)}, items: ${gqlLiteral(input.lineItems)}, note: ${gqlLiteral(input.note ?? null)}, tags: ${gqlLiteral(input.tags ?? [])}, shippingPrice: ${input.shippingPrice ?? 6.99}, discountAmount: ${input.discountAmount ?? 0}, discountCode: ${gqlLiteral(input.discountCode ?? null)}, giftCardCode: ${gqlLiteral(input.giftCardCode ?? null)}) { order { ${ORDER_SELECTION} } userErrors { field message } }`)
     getStore().addOrder(entity as Order)
     return entity as Order
   }
   const draft = buildDraft(input)
+  getStore().addOrder(draft)
+  return draft
+}
+
+/**
+ * Duplicate an order (real or draft) into a new draft — server-side via
+ * draftOrderCreateFromOrder / draftOrderDuplicate so shipping, discounts, and
+ * gift cards carry over. Offline mode falls back to a faithful local clone.
+ */
+export async function duplicateOrderAsDraft(orderId: string): Promise<Order> {
+  const source = getStore().orders.find((o) => o.id === orderId)
+  if (!source) throw new Error('Order not found')
+  await delay(350)
+  if (IS_REMOTE) {
+    const field = source.isDraft ? 'draftOrderDuplicate' : 'draftOrderCreateFromOrder'
+    const arg = source.isDraft ? `id: ${gqlLiteral(orderId)}` : `orderId: ${gqlLiteral(orderId)}`
+    const { entity } = await mutatePayload(field, `${field}(${arg}) { order { ${ORDER_SELECTION} } userErrors { field message } }`)
+    if (!entity) throw new Error('Duplicate failed')
+    getStore().addOrder(entity as Order)
+    return entity as Order
+  }
+  const now = new Date().toISOString()
+  const draft: Order = {
+    ...source,
+    id: uid('o'),
+    name: `#D${Math.floor(Math.random() * 900 + 100)}`,
+    createdAt: now,
+    status: 'draft',
+    isDraft: true,
+    paymentStatus: 'unpaid',
+    fulfillmentStatus: 'unfulfilled',
+    cancelledAt: undefined,
+    closedAt: undefined,
+    lineItems: source.lineItems.map((li) => ({ ...li, id: uid('li') })),
+    fulfillments: [],
+    refunds: [],
+    tags: [...source.tags],
+    timeline: [{ id: uid('ev'), createdAt: now, type: 'created', message: source.isDraft ? `Duplicated from draft ${source.name}` : `Draft created from order ${source.name}`, author }],
+  }
   getStore().addOrder(draft)
   return draft
 }
@@ -625,7 +702,8 @@ export async function createOrderFromAbandoned(checkoutId: string): Promise<stri
     )
     if (entity) getStore().addOrder(entity as Order)
     store.patchAbandoned(checkoutId, { recoveryStatus: 'recovered' })
-    return entity?.id as string | undefined
+    const created = entity as { id?: string } | null
+    return created?.id
   }
   const draft = await createDraft({
     customerId: customer.id,

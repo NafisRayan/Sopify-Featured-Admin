@@ -1,6 +1,6 @@
 import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
-import { syncMutation, gqlLiteral } from './api'
+import { IS_REMOTE, gqlRequest, refreshFromServer, scheduleRefresh, syncMutation, gqlLiteral } from './api'
 import { delay } from '@/lib/delay'
 import type {
   StoreSettings, PaymentProvider, ShippingRate, StaffMember, PermissionResource,
@@ -207,40 +207,87 @@ export async function toggleTask(id: string): Promise<void> {
   syncMutation(`mutation { taskToggle(id: ${gqlLiteral(id)}) { storeName } }`)
 }
 
-/** Dev utility (spec §38): wipe localStorage changes and re-hydrate seeds */
+/**
+ * Dev utility (spec §38). Remote mode wipes and reseeds the backend database
+ * (~80s server-side — the mutation runs to completion; the client abort is capped
+ * at 320s to stay clear of the server's 300s transaction timeout), then
+ * re-hydrates the store from the fresh bootstrap snapshot. Offline mode wipes
+ * localStorage and restores the local seeds, as before.
+ */
 export async function resetDemoData(): Promise<void> {
   await delay(500)
+  if (IS_REMOTE) {
+    await gqlRequest(`mutation { resetDemoData { storeName } }`, undefined, 320_000)
+    await refreshFromServer()
+    return
+  }
   localStorage.removeItem('northstar-admin-v1')
   getStore().resetData()
 }
 
-// ─── Domains / policies / localization (parity wrappers) ───────────────────
+/** Mirrors the backend rule (store-content.module.ts `domainAdd`). */
+const DOMAIN_HOST_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+
+/**
+ * Optimistic domains mutation: apply locally, then confirm with the server.
+ * Any server rejection (invalid host, unknown host, primary-guard) restores
+ * the previous list so the optimistic row never survives in local state.
+ */
+async function domainMutation(host: string, apply: (domains: StoreDomain[]) => StoreDomain[], confirm: (normalized: string) => Promise<unknown>): Promise<void> {
+  const normalized = host.trim().toLowerCase()
+  const store = getStore()
+  const previous = store.settings.domains ?? []
+  const domains = apply(previous)
+  store.updateSettings({ domains })
+  if (!IS_REMOTE) return
+  try {
+    await confirm(normalized)
+    scheduleRefresh()
+  } catch (e) {
+    store.updateSettings({ domains: previous })
+    throw e
+  }
+}
 
 export async function domainAdd(host: string): Promise<void> {
+  const normalized = host.trim().toLowerCase()
+  if (!DOMAIN_HOST_PATTERN.test(normalized)) throw new Error('Enter a valid domain like example.com')
   await delay(300)
-  const store = getStore()
-  const domains: StoreDomain[] = [
-    ...(store.settings.domains ?? []),
-    { host: host.trim(), primary: false, sslEnabled: false, verificationStatus: 'pending', createdAt: new Date().toISOString() },
-  ]
-  store.updateSettings({ domains })
-  syncMutation(`mutation { domainAdd(host: ${gqlLiteral(host.trim())}) { host } }`)
+  if ((getStore().settings.domains ?? []).some((d) => d.host === normalized)) {
+    throw new Error('This domain is already connected')
+  }
+  await domainMutation(
+    normalized,
+    (domains) => [
+      ...domains,
+      { host: normalized, primary: false, sslEnabled: false, verificationStatus: 'pending', createdAt: new Date().toISOString() },
+    ],
+    (h) => gqlRequest(`mutation _ { domainAdd(host: ${gqlLiteral(h)}) { host } }`),
+  )
 }
 
 export async function domainSetPrimary(host: string): Promise<void> {
   await delay(250)
-  const store = getStore()
-  const domains: StoreDomain[] = (store.settings.domains ?? []).map((d) => ({ ...d, primary: d.host === host }))
-  store.updateSettings({ domains })
-  syncMutation(`mutation { domainSetPrimary(host: ${gqlLiteral(host)}) { host } }`)
+  await domainMutation(
+    host,
+    (domains) => {
+      if (!domains.some((d) => d.host === host.trim().toLowerCase())) throw new Error('Domain not found')
+      return domains.map((d) => ({ ...d, primary: d.host === host.trim().toLowerCase() }))
+    },
+    (h) => gqlRequest(`mutation _ { domainSetPrimary(host: ${gqlLiteral(h)}) { host } }`),
+  )
 }
 
 export async function domainDelete(host: string): Promise<void> {
   await delay(250)
-  const store = getStore()
-  const domains: StoreDomain[] = (store.settings.domains ?? []).filter((d) => d.host !== host)
-  store.updateSettings({ domains })
-  syncMutation(`mutation { domainDelete(host: ${gqlLiteral(host)}) { host } }`)
+  await domainMutation(
+    host,
+    (domains) => {
+      if (!domains.some((d) => d.host === host.trim().toLowerCase())) throw new Error('Domain not found')
+      return domains.filter((d) => d.host !== host.trim().toLowerCase())
+    },
+    (h) => gqlRequest(`mutation _ { domainDelete(host: ${gqlLiteral(h)}) { host } }`),
+  )
 }
 
 export async function shopPolicyUpdate(policy: 'refund' | 'privacy' | 'terms' | 'shipping' | 'subscriber', body: string): Promise<void> {

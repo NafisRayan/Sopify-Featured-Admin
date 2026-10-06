@@ -14,14 +14,19 @@ export async function b2bPricing(
   prisma: PrismaService,
   customerId: string,
   variantId: string,
+  orderLocationId?: string | null,
 ): Promise<{ fixedPrice: number | null; discountPercent: number }> {
   const company = await prisma.company.findFirst({ where: { customerId } })
   if (!company) return { fixedPrice: null, discountPercent: 0 }
   const lists = await prisma.priceList.findMany({ where: { companyId: company.id }, include: { entries: true } })
   const candidates = lists.filter((l) => l.entries.some((e) => e.variantId === variantId))
-  const entry =
-    (candidates.find((l) => l.locationId != null) ?? candidates.find((l) => l.locationId == null))
-      ?.entries.find((e) => e.variantId === variantId) ?? null
+  // Preference: list scoped to the order's location → catalog-level → none.
+  // A location-scoped list must never apply when the order's location is unknown
+  // (drafts) or different — location lists are opt-in per order location.
+  const list =
+    (orderLocationId != null ? candidates.find((l) => l.locationId === orderLocationId) : undefined) ??
+    candidates.find((l) => l.locationId == null)
+  const entry = list?.entries.find((e) => e.variantId === variantId) ?? null
   return { fixedPrice: entry ? entry.price : null, discountPercent: company.priceListDiscountPercent }
 }
 
@@ -385,7 +390,8 @@ export class CustomersService {
       where: { id: { in: rows.map((r) => r.id) } },
       data: { emailMarketingConsent: consentState },
     })
-    return this.decorateCustomers(rows as unknown as Record<string, unknown>[])
+    const updated = rows.map((r) => ({ ...r, emailMarketingConsent: consentState }))
+    return this.decorateCustomers(updated as unknown as Record<string, unknown>[])
   }
 
   async updateSmsConsent(ids: string[], consentState: string) {
@@ -411,8 +417,6 @@ export class CustomersService {
     const secondary = await this.prisma.customer.findUnique({ where: { id: secondaryId } })
     if (!primary) throw new Error('Primary customer not found')
     if (!secondary) throw new Error('Secondary customer not found')
-    await this.prisma.order.updateMany({ where: { customerId: secondaryId }, data: { customerId: primaryId } })
-    await this.prisma.giftCard.updateMany({ where: { customerId: secondaryId }, data: { customerId: primaryId } })
     const tags = [
       ...new Set([
         ...parseJson<string[]>(primary.tags as string, []),
@@ -424,8 +428,14 @@ export class CustomersService {
     const addressKey = (a: Record<string, unknown>) => `${a.address1 ?? ''}|${a.zip ?? ''}`
     const primaryKeys = new Set(primaryAddresses.map(addressKey))
     const addresses = [...primaryAddresses, ...secondaryAddresses.filter((a) => !primaryKeys.has(addressKey(a)))]
-    await this.prisma.customer.update({ where: { id: primaryId }, data: { tags: toJson(tags), addresses: toJson(addresses) } })
-    await this.prisma.customer.delete({ where: { id: secondaryId } })
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.updateMany({ where: { customerId: secondaryId }, data: { customerId: primaryId } })
+      await tx.giftCard.updateMany({ where: { customerId: secondaryId }, data: { customerId: primaryId } })
+      await tx.abandonedCheckout.updateMany({ where: { customerId: secondaryId }, data: { customerId: primaryId } })
+      await tx.company.updateMany({ where: { customerId: secondaryId }, data: { customerId: primaryId } })
+      await tx.customer.update({ where: { id: primaryId }, data: { tags: toJson(tags), addresses: toJson(addresses) } })
+      await tx.customer.delete({ where: { id: secondaryId } })
+    })
     return this.customer(primaryId)
   }
 
@@ -692,8 +702,8 @@ export class CustomersResolver {
   }
 
   @Mutation()
-  companyDelete(@Args('id') id: string) {
-    return { deletedIds: this.service.deleteCompany(id), userErrors: [] }
+  async companyDelete(@Args('id') id: string) {
+    return { deletedIds: await this.service.deleteCompany(id), userErrors: [] }
   }
 
   @Mutation()

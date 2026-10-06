@@ -506,7 +506,8 @@ export class StoreContentService {
     return this.domains()
   }
 
-  async domainSetPrimary(host: string) {
+  async domainSetPrimary(rawHost: string) {
+    const host = rawHost.trim().toLowerCase()
     const domains = await this.domains()
     if (!domains.some((d) => d.host === host)) throw new Error('Domain not found')
     for (const d of domains) d.primary = d.host === host
@@ -515,7 +516,8 @@ export class StoreContentService {
     return this.domains()
   }
 
-  async domainDelete(host: string) {
+  async domainDelete(rawHost: string) {
+    const host = rawHost.trim().toLowerCase()
     const domains = await this.domains()
     const target = domains.find((d) => d.host === host)
     if (!target) throw new Error('Domain not found')

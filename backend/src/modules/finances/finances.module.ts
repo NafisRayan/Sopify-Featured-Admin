@@ -13,8 +13,8 @@ const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'frida
 function nextWeekdayAfter(from: Date, dayOfWeek: string): Date {
   const target = Math.min(Math.max(WEEKDAYS.indexOf(dayOfWeek.toLowerCase()), 0), 6)
   const d = new Date(from)
-  d.setHours(0, 0, 0, 0)
-  let add = (target - d.getDay() + 7) % 7
+  d.setUTCHours(0, 0, 0, 0)
+  let add = (target - d.getUTCDay() + 7) % 7
   if (add === 0) add = 7
   return new Date(d.getTime() + add * DAY_MS)
 }
@@ -23,7 +23,7 @@ function nextWeekdayAfter(from: Date, dayOfWeek: string): Date {
 function payoutDateFor(at: Date, schedule: string, dayOfWeek: string): Date {
   if (schedule === 'daily') {
     const d = new Date(at)
-    d.setHours(0, 0, 0, 0)
+    d.setUTCHours(0, 0, 0, 0)
     return new Date(d.getTime() + DAY_MS)
   }
   if (schedule === 'biweekly') {
@@ -32,9 +32,8 @@ function payoutDateFor(at: Date, schedule: string, dayOfWeek: string): Date {
   if (schedule === 'monthly') {
     // Simplification (per spec): a same-weekday-of-month pattern is overkill — use the end of the
     // transaction's month, then the first Friday strictly after it.
-    const endOfMonth = new Date(at.getFullYear(), at.getMonth() + 1, 0)
-    endOfMonth.setHours(0, 0, 0, 0)
-    let add = (5 - endOfMonth.getDay() + 7) % 7
+    const endOfMonth = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 0))
+    let add = (5 - endOfMonth.getUTCDay() + 7) % 7
     if (add === 0) add = 7
     return new Date(endOfMonth.getTime() + add * DAY_MS)
   }
@@ -47,8 +46,8 @@ function payoutDateFor(at: Date, schedule: string, dayOfWeek: string): Date {
  * links the transactions to it. Safe to run repeatedly; existing paid/in_transit payouts are
  * never downgraded.
  */
-/** Process-local guard: skip the full recompute pass when nothing changed. */
-let materializedOnce = false
+/** Process-local guard keyed by payout schedule: a schedule change forces a re-bucket. */
+let materializedKey: string | null = null
 export async function ensurePayouts(prisma: PrismaService): Promise<void> {
   const settingsRow = await prisma.storeSettings.findFirst()
   const settingsVal = settingsRow
@@ -58,9 +57,21 @@ export async function ensurePayouts(prisma: PrismaService): Promise<void> {
   const schedule = payoutsCfg.schedule ?? 'weekly'
   const dayOfWeek = payoutsCfg.dayOfWeek ?? 'friday'
 
+  // Schedule changed since the last pass → release every not-yet-paid payout so its
+  // transactions re-bucket under the new schedule (paid payouts are immutable).
+  if (materializedKey !== null && materializedKey !== `${schedule}:${dayOfWeek}`) {
+    const stale = await prisma.payout.findMany({ where: { status: { not: 'paid' } } })
+    if (stale.length > 0) {
+      await prisma.balanceTransaction.updateMany({
+        where: { payoutId: { in: stale.map((p) => p.id) } },
+        data: { payoutId: null },
+      })
+      await prisma.payout.deleteMany({ where: { id: { in: stale.map((p) => p.id) } } })
+    }
+  }
   const txns = await prisma.balanceTransaction.findMany({ where: { payoutId: null }, orderBy: { at: 'asc' } })
-  // Nothing new since the last pass and this process already materialized once → no-op.
-  if (txns.length === 0 && materializedOnce) return
+  // Nothing new since the last pass under this schedule → no-op.
+  if (txns.length === 0 && materializedKey === `${schedule}:${dayOfWeek}`) return
 
   const buckets = new Map<string, { date: Date; txns: typeof txns }>()
   for (const t of txns) {
@@ -122,7 +133,7 @@ export async function ensurePayouts(prisma: PrismaService): Promise<void> {
       await prisma.payout.update({ where: { id: payout.id }, data: { amount, status: merged, arrivedAt } })
     }
   }
-  materializedOnce = true
+  materializedKey = `${schedule}:${dayOfWeek}`
 }
 
 @Injectable()

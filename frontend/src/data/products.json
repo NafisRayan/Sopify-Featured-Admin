@@ -6099,5 +6099,67 @@
   "trackQuantity": true,
   "createdAt": "2025-04-10T11:59:30.097Z",
   "updatedAt": "2026-08-26T06:06:24.002Z"
+ },
+ {
+  "id": "p_yoga-program-video",
+  "title": "Yoga Flow Program — Digital Download",
+  "descriptionHtml": "<p>A 4-week video yoga program with downloadable class plans and a printable pose guide. Delivered instantly to your inbox — nothing ships.</p>",
+  "vendor": "Northstar Goods",
+  "productType": "Digital",
+  "category": "Digital Goods > Fitness & Yoga",
+  "status": "active",
+  "tags": [
+   "digital",
+   "fitness",
+   "new-arrival"
+  ],
+  "collectionIds": [],
+  "channels": [
+   "online_store"
+  ],
+  "options": [],
+  "variants": [
+   {
+    "id": "p_yoga-program-video_v1",
+    "productId": "p_yoga-program-video",
+    "title": "Default Title",
+    "sku": "YPV63",
+    "barcode": "0846217539048",
+    "price": 19,
+    "costPerItem": 0,
+    "optionValues": {},
+    "weightGrams": 0,
+    "imageId": "m_p_yoga-program-video_1",
+    "requiresShipping": false,
+    "tracked": false,
+    "available": true
+   }
+  ],
+  "media": [
+   {
+    "id": "m_p_yoga-program-video_1",
+    "productId": "p_yoga-program-video",
+    "type": "image",
+    "src": "/images/products/yoga-program-video.svg",
+    "alt": "Yoga Flow Program — Digital Download"
+   },
+   {
+    "id": "m_p_yoga-program-video_2",
+    "productId": "p_yoga-program-video",
+    "type": "image",
+    "src": "/images/products/yoga-program-video-alt.svg",
+    "alt": "Yoga Flow Program — Digital Download detail"
+   }
+  ],
+  "seo": {
+   "title": "Yoga Flow Program — Digital Download",
+   "description": "A 4-week video yoga program with downloadable class plans and a printable pose guide. Delivered instantly to your inbox.",
+   "handle": "yoga-program-video"
+  },
+  "weightGrams": 0,
+  "requiresShipping": false,
+  "trackQuantity": false,
+  "createdAt": "2026-02-20T11:59:30.100Z",
+  "updatedAt": "2026-09-01T11:59:30.100Z"
  }
 ]

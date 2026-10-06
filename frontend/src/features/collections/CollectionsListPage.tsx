@@ -7,7 +7,7 @@ import {
   Badge, Button, Drawer, EmptyState, Input, PortalMenu, Select, Textarea, useConfirm, useToast,
 } from '@/components/ui'
 import { formatDate } from '@/lib/format'
-import { createCollection, deleteCollections } from '@/services/collectionsService'
+import { createCollection, deleteCollections, duplicateCollection } from '@/services/collectionsService'
 import { useCan } from '@/lib/permissions'
 import type { Collection } from '@/types'
 
@@ -160,6 +160,18 @@ export default function CollectionsListPage() {
             }
             items={[
               { label: 'Open', onClick: () => navigate(`/collections/${c.id}`) },
+              ...(canEdit
+                ? [{
+                    label: 'Duplicate',
+                    onClick: () =>
+                      void duplicateCollection(c.id)
+                        .then((copy) => {
+                          toast('Collection duplicated')
+                          navigate(`/collections/${copy.id}`)
+                        })
+                        .catch((e: unknown) => toast(e instanceof Error ? e.message : 'Failed to duplicate', { tone: 'critical' })),
+                  }]
+                : []),
               ...(canEdit
                 ? [{
                     label: 'Delete', icon: <Trash2 size={13} />, destructive: true,

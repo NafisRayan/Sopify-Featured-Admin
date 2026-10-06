@@ -205,8 +205,8 @@ export class OrdersResolver {
   }
 
   @Mutation()
-  draftOrderDelete(@Args('ids') ids: string[]) {
-    return { updatedIds: this.service.deleteDrafts(ids), userErrors: [] }
+  async draftOrderDelete(@Args('ids') ids: string[]) {
+    return { updatedIds: await this.service.deleteDrafts(ids), userErrors: [] }
   }
 
 

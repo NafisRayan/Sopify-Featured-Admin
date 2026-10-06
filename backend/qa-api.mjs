@@ -2,13 +2,28 @@
  * QA API test suite — exercises the full GraphQL surface like an external client.
  * Run: node qa-api.mjs  (backend must be running on :4000)
  */
+
+import fs from 'node:fs'
+import path from 'node:path'
+import { PrismaClient } from '@prisma/client'
 const URL = 'http://localhost:4000/graphql'
 const AUTH_URL = 'http://localhost:4000/auth/login'
 let cookieJar = ''
 const RUN = Date.now().toString(36)
+// Direct DB access is used ONLY to fabricate disposable fixtures (abandoned
+// checkout rows have no create mutation); everything else goes through GraphQL.
+// Lazily constructed: the fabricated abandoned-checkout row (W6) is the only
+// direct DB use in this GraphQL suite; a broken DATABASE_URL must surface at
+// that one fixture, not kill the run before C3 can restore a pristine store.
+let _prisma = null
+function getPrisma() {
+  if (!_prisma) _prisma = new PrismaClient()
+  return _prisma
+}
 
 let pass = 0
 let fail = 0
+let aborted = false
 let locId, loc2Id
 const failures = []
 
@@ -64,7 +79,37 @@ async function mut(payloadField, mutation) {
   return data[payloadField] ?? {}
 }
 
+// Pin a TRACKED variant with real stock — products(first: 1) sorts by updatedAt
+// and could hand back the untracked digital SKU (no inventory rows → convert
+// auto-fulfills and every stock expectation below breaks). Throws, so a pinned
+// section can never silently vanish from the pass count. Scans 100 newest
+// products (seed store has 54) so newer zero-stock SKUs can't hide the stock.
+async function pickStockedProduct(minStock = 2) {
+  const p = await GQL(`{ products(first: 100) { edges { node { totalInventory variants { id } } } } }`)
+  const cand = (p.products?.edges ?? []).map((e) => e.node).find((n) => n.totalInventory >= minStock && n.variants.length > 0)
+  if (!cand) throw new Error(`no tracked product with stock >= ${minStock} found`)
+  return cand
+}
+
+// C3: resetDemoData really wipes + reseeds. Declared here, invoked from the
+// script-level finally so it runs even when an earlier section threw (e.g. the
+// W6 Prisma fixture under a broken DATABASE_URL) — sections 1–15 mutate Neon.
+async function runC3() {
+  const rd = await GQL(`mutation { resetDemoData { storeName } }`)
+  check('C3 resetDemoData reseeds via GraphQL', !rd.__error && !!rd.resetDemoData?.storeName, rd.__error ?? '')
+  await GQL(`{ bootstrap { settings { storeName } } }`)
+  const seedProducts = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../frontend/src/data/products.json'), 'utf8'))
+  const seedOrders = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../frontend/src/data/orders.json'), 'utf8'))
+  const pc = await GQL(`{ productsCount }`)
+  const oc = await GQL(`{ ordersCount }`)
+  check('C3 product rows match seed file', pc.productsCount === seedProducts.length, JSON.stringify({ got: pc.productsCount, exp: seedProducts.length }))
+  check('C3 order rows match seed file', oc.ordersCount === seedOrders.filter((o) => !o.isDraft).length, JSON.stringify({ got: oc.ordersCount, exp: seedOrders.filter((o) => !o.isDraft).length }))
+  const pays16 = await GQL(`{ payouts { id status } }`)
+  check('C3 payouts re-materialized after reset', (pays16.payouts ?? []).length > 0, JSON.stringify(pays16).slice(0, 120))
+}
+
 await login()
+try {
 
 console.log('═══ 1. QUERY ROOT ═══')
 {
@@ -94,7 +139,7 @@ console.log('═══ 1. QUERY ROOT ═══')
   check('abandonedCheckouts', ab.abandonedCheckouts?.length > 0)
 
   const c = await GQL(`{ customers(first: 5) { totalCount edges { node { id email ordersCount totalSpent defaultAddress { city } tags } } } }`)
-  check('customers + derived stats', c.customers?.edges?.length > 0 && typeof c.customers.edges[0].node.totalSpent === 'number')
+  check('customers + derived stats', c.customers?.edges?.length > 0 && typeof c.customers.edges[0].node.totalSpent === 'number', c.__error ?? JSON.stringify({ edges: c.customers?.edges?.length, first: c.customers?.edges?.[0]?.node ?? null }).slice(0, 200))
 
   const co = await GQL(`{ collections(first: 12) { totalCount edges { node { id title type rules { column } productIds } } } }`)
   check('collections incl. smart rules', co.collections?.edges?.length >= 10)
@@ -176,9 +221,18 @@ let testProductId
 
 console.log('═══ 3. MUTATIONS: order workflow ═══')
 {
-  const o = await GQL(`{ orders(first: 50) { edges { node { id name status fulfillmentStatus paymentStatus total } } } }`)
-  const target = o.orders.edges.map((e) => e.node).find((x) => x.status === 'open' && x.fulfillmentStatus === 'unfulfilled' && x.paymentStatus === 'paid')
-  check('found open unfulfilled order', !!target)
+  const o = await GQL(`{ orders(first: 250) { edges { node { id name status fulfillmentStatus paymentStatus total } } } }`)
+  let target = o.orders.edges.map((e) => e.node).find((x) => x.status === 'open' && x.fulfillmentStatus === 'unfulfilled' && x.paymentStatus === 'paid')
+  if (!target?.id) {
+    // Drifted state (previous runs consumed the seed candidates): manufacture one.
+    const c0 = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
+    const cand0 = await pickStockedProduct()
+    const d0 = await mut('draftOrderCreate', `draftOrderCreate(customerId: "${c0.customers.edges[0].node.id}", items: [{ variantId: "${cand0.variants[0].id}", quantity: 1 }]) { order { id } userErrors { message } }`)
+    const cv0 = await mut('draftOrderConvert', `draftOrderConvert(id: "${d0.order?.id}") { order { id } userErrors { message } }`)
+    await mut('orderMarkAsPaid', `orderMarkAsPaid(id: "${cv0.order?.id}") { order { id } userErrors { message } }`)
+    target = { id: cv0.order?.id }
+  }
+  check('found open unfulfilled order', !!target?.id, target?.id ?? '')
 
   const f = await GQL(`{ locations { id } }`)
   const ff = await mut('orderFulfill', `orderFulfill(input: { orderId: "${target.id}", lineItemIds: [], locationId: "${f.locations[0].id}", notifyCustomer: false }) { order { id } userErrors { message } }`)
@@ -221,8 +275,7 @@ console.log('═══ 4. MUTATIONS: drafts ═══')
 {
   const c = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
   const custId = c.customers.edges[0].node.id
-  const prod = await GQL(`{ products(first: 1) { edges { node { variants { id } } } } }`)
-  const varId = prod.products.edges[0].node.variants[0].id
+  const varId = (await pickStockedProduct()).variants[0].id
   const levels = await GQL(`{ inventoryLevels { variantId locationId available } }`)
   const freeLevel = (levels.inventoryLevels ?? []).find((l) => l.variantId === varId && l.available >= 2)
   if (!freeLevel) {
@@ -419,8 +472,7 @@ console.log('═══ 10. RELAY & GRAPHQL PARITY FEATURES ═══')
   // 4. draftOrderCalculate
   const customerList = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
   const testCustomerId = customerList.customers?.edges?.[0]?.node?.id
-  const productList = await GQL(`{ products(first: 1) { edges { node { variants { id } } } } }`)
-  const calcVarId = productList.products?.edges?.[0]?.node?.variants?.[0]?.id
+  const calcVarId = (await pickStockedProduct()).variants[0].id
   if (testCustomerId && calcVarId) {
     const draftCalc = await mut('draftOrderCalculate', `draftOrderCalculate(input: { customerId: "${testCustomerId}", items: [{ variantId: "${calcVarId}", quantity: 2 }], shippingPrice: 5, discountAmount: 2 }) { calculatedDraftOrder { total subtotal taxTotal shippingPrice totalDiscount } userErrors { message } }`)
     check('draftOrderCalculate computes totals without writing order', typeof draftCalc.calculatedDraftOrder?.total === 'number' && draftCalc.calculatedDraftOrder?.total > 0)
@@ -476,9 +528,7 @@ console.log('═══ 13. PARITY ADDITIONS — price lists + B2B pricing ══
 {
   const company = await GQL(`{ companies(first: 1) { edges { node { id customerId } } } }`)
   const comp = company.companies?.edges?.[0]?.node
-  const prod = await GQL(`{ products(first: 1) { edges { node { id variants { id price } } } } }`)
-  const varId = prod.products?.edges?.[0]?.node?.variants?.[0]?.id
-  const listPrice = prod.products?.edges?.[0]?.node?.variants?.[0]?.price
+  const varId = (await pickStockedProduct()).variants[0].id
   if (comp && varId) {
     const pl = await mut('priceListCreate', `priceListCreate(input: { name: "QA List", companyId: "${comp.id}", entries: [{ variantId: "${varId}", price: 1.5 }] }) { priceList { id entries { variantId price } } userErrors { message } }`)
     check('priceListCreate with fixed price', pl.priceList?.entries?.some((e) => e.variantId === varId && e.price === 1.5))
@@ -490,6 +540,36 @@ console.log('═══ 13. PARITY ADDITIONS — price lists + B2B pricing ══
     const calcAfter = await mut('draftOrderCalculate', `draftOrderCalculate(input: { customerId: "${comp.customerId}", items: [{ variantId: "${varId}", quantity: 1 }] }) { calculatedDraftOrder { lineItems { price } } }`)
     check('price reverts after list deletion', calcAfter.calculatedDraftOrder?.lineItems?.[0]?.price !== 1.5)
   }
+  // Location-scoped price lists are opt-in per order location: orderEdit on an
+  // order with NO fulfillments has orderLocationId null → the scoped price must
+  // never apply (regression guard for the b2bPricing location rule).
+  if (comp && varId) {
+    const scoped = await mut('priceListCreate', `priceListCreate(input: { name: "QA Scoped ${RUN}", companyId: "${comp.id}", locationId: "${locId}", entries: [{ variantId: "${varId}", price: 0.01 }] }) { priceList { id } userErrors { message } }`)
+    const scopedId = scoped.priceList?.id
+    const custSc = comp.customerId
+    // A second variant that exists ONLY on the scoped list: orderEdit must PUSH
+    // a new line for it (editing an existing variant only bumps quantity and
+    // never rewrites unit price — the pushed line is what exercises b2bPricing).
+    const prodsSc = await GQL(`{ products(first: 100) { edges { node { totalInventory variants { id } } } } }`)
+    const varSc2 = (prodsSc.products?.edges ?? []).map((e) => e.node).filter((n) => n.totalInventory >= 2 && n.variants.length > 0).map((n) => n.variants[0].id).find((v) => v !== varId)
+    if (scopedId && custSc && varSc2) {
+      // If this silently failed, varSc2 would never be on the scoped list, the
+      // pushed line would price at catalog and the check below could not fail.
+      const updSc = await mut('priceListUpdate', `priceListUpdate(id: "${scopedId}", input: { name: "QA Scoped ${RUN}", companyId: "${comp.id}", locationId: "${locId}", entries: [{ variantId: "${varId}", price: 0.01 }, { variantId: "${varSc2}", price: 0.01 }] }) { priceList { id } userErrors { message } }`)
+      check('priceListUpdate added varSc2 to the scoped list', !!updSc.priceList?.id && !(updSc.userErrors?.length), JSON.stringify(updSc.userErrors))
+      const dSc = await mut('draftOrderCreate', `draftOrderCreate(customerId: "${custSc}", items: [{ variantId: "${varId}", quantity: 1 }]) { order { id } userErrors { message } }`)
+      const cvSc = await mut('draftOrderConvert', `draftOrderConvert(id: "${dSc.order?.id}") { order { id lineItems { id } } userErrors { message } }`)
+      const beforeSc = (cvSc.order?.lineItems ?? []).length
+      const oeSc = await mut('orderEdit', `orderEdit(id: "${cvSc.order?.id}", added: [{ variantId: "${varSc2}", quantity: 1 }], removed: []) { order { lineItems { variantId price } } userErrors { message } }`)
+      const linesSc = oeSc.order?.lineItems ?? []
+      const pushed = linesSc.find((l) => l.variantId === varSc2)
+      check('b2b location-scoped list ignored without order location', oeSc.userErrors?.length === 0 && linesSc.length === beforeSc + 1 && pushed != null && pushed.price !== 0.01 && linesSc.every((l) => l.price !== 0.01), JSON.stringify(oeSc.order ?? oeSc.userErrors))
+      await mut('orderCancel', `orderCancel(id: "${cvSc.order?.id}") { order { status } }`)
+    } else {
+      check('b2b scoped fixtures present', false, JSON.stringify({ list: !!scopedId, cust: !!custSc, var2: !!varSc2 }))
+    }
+    if (scopedId) await mut('priceListDelete', `priceListDelete(id: "${scopedId}") { deletedId userErrors { message } }`)
+  }
 }
 
 console.log('═══ 14. PARITY ADDITIONS — returns lifecycle, fulfillment events, inventory extras ═══')
@@ -497,8 +577,7 @@ console.log('═══ 14. PARITY ADDITIONS — returns lifecycle, fulfillment e
   // create a fresh paid order via draft to test returns + fulfillment lifecycle
   const cust = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
   const custId = cust.customers?.edges?.[0]?.node?.id
-  const pv = await GQL(`{ products(first: 1) { edges { node { variants { id } } } } }`)
-  const vId = pv.products?.edges?.[0]?.node?.variants?.[0]?.id
+  const vId = (await pickStockedProduct()).variants[0].id
   if (custId && vId) {
     const lvls = await GQL(`{ inventoryLevels { variantId locationId available } }`)
     if (!(lvls.inventoryLevels ?? []).some((l) => l.variantId === vId && l.available >= 2)) {
@@ -518,9 +597,9 @@ console.log('═══ 14. PARITY ADDITIONS — returns lifecycle, fulfillment e
     const appr = await mut('returnApprove', `returnApprove(id: "${retId}") { return { id status } userErrors { message } }`)
     check('returnApprove → approved', appr.return?.status === 'approved')
     const decAfterApprove = await mut('returnDecline', `returnDecline(id: "${retId}") { return { status } userErrors { message } }`)
-    check('decline after approve blocked or allowed per guard', decAfterApprove.userErrors?.length > 0 || decAfterApprove.return?.status === 'declined')
+    check('decline after approve → declined (decline is allowed from approved)', decAfterApprove.return?.status === 'declined', JSON.stringify(decAfterApprove.userErrors))
     const canceled = await mut('returnCancel', `returnCancel(id: "${retId}") { return { status } userErrors { message } }`)
-    check('returnCancel → canceled', canceled.return?.status === 'canceled' || canceled.userErrors?.length > 0)
+    check('returnCancel from declined → canceled', canceled.return?.status === 'canceled', JSON.stringify(canceled.userErrors))
     // fulfillment event + cancel on a new fulfillment
     const ful = await mut('orderFulfill', `orderFulfill(input: { orderId: "${orderId}", lineItemIds: [], locationId: "any" }) { order { id } userErrors { message } }`)
     check('fulfill with no lines → userError', ful.userErrors?.length > 0)
@@ -579,10 +658,254 @@ console.log('═══ 15. PARITY ADDITIONS — payouts, analytics, saved search
   }
 }
 
+console.log('═══ 16. REVIEW REGRESSIONS — inventory invariant, analytics funnel, domains, price lists, merge, returns gate, reset ═══')
+{
+  // ── C1: convert → fulfill → fulfillmentCancel keeps the stock ledger balanced ──
+  const cand16 = await pickStockedProduct(6)
+  const cust16 = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
+  const cid16 = cust16.customers?.edges?.[0]?.node?.id
+  if (!cid16) throw new Error('no customers found for C1')
+  { // cid16 is non-null — guaranteed by the throw above; cand16 by pickStockedProduct
+    const vid16 = cand16.variants[0].id
+    const levels = async () => {
+      const d = await GQL(`{ inventoryLevels { variantId available committed } }`)
+      return (d.inventoryLevels ?? []).filter((l) => l.variantId === vid16).reduce((s, l) => ({ a: s.a + l.available, c: s.c + l.committed }), { a: 0, c: 0 })
+    }
+    const lv0 = await GQL(`{ inventoryLevels { variantId locationId available } }`)
+    const stock16 = (lv0.inventoryLevels ?? []).filter((l) => l.variantId === vid16).reduce((s, l) => s + l.available, 0)
+    if (stock16 < 4) {
+      const anyLoc = (lv0.inventoryLevels ?? []).find((l) => l.variantId === vid16)?.locationId
+      await mut('inventoryAdjust', `inventoryAdjust(input: { variantId: "${vid16}", locationId: "${anyLoc}", availableDelta: 8, reason: "qa-topup-16" }) { level { available } userErrors { message } }`)
+    }
+    const s0 = await levels()
+    const d16 = await mut('draftOrderCreate', `draftOrderCreate(customerId: "${cid16}", items: [{ variantId: "${vid16}", quantity: 2 }]) { order { id } userErrors { message } }`)
+    const conv16 = await mut('draftOrderConvert', `draftOrderConvert(id: "${d16.order?.id}") { order { id } userErrors { message } }`)
+    const oid16 = conv16.order?.id
+    await mut('orderMarkAsPaid', `orderMarkAsPaid(id: "${oid16}") { order { id } userErrors { message } }`)
+    const s1 = await levels()
+    check('C1 convert reserves (available −2, committed +2)', s1.a === s0.a - 2 && s1.c === s0.c + 2, JSON.stringify({ s0, s1 }))
+    const lv16 = await GQL(`{ inventoryLevels { variantId locationId committed } }`)
+    const fulLoc16 = (lv16.inventoryLevels ?? []).find((l) => l.variantId === vid16 && l.committed >= 2)?.locationId
+    const guard16 = await mut('orderFulfill', `orderFulfill(input: { orderId: "${oid16}", lineItemIds: [], locationId: "${fulLoc16 ?? ''}" }) { order { id } userErrors { message } }`)
+    check('C1 empty fulfill guard still holds', guard16.userErrors?.length > 0)
+    const lines16 = await GQL(`{ order(id: "${oid16}") { lineItems { id } } }`)
+    const ids16 = (lines16.order?.lineItems ?? []).map((l) => `"${l.id}"`).join(',')
+    const ok16 = await mut('orderFulfill', `orderFulfill(input: { orderId: "${oid16}", lineItemIds: [${ids16}], locationId: "${fulLoc16 ?? ''}" }) { order { id fulfillments { id restockMap } } userErrors { message } }`)
+    const s2 = await levels()
+    check('C1 fulfill consumes committed only', s2.a === s1.a && s2.c === s1.c - 2, JSON.stringify({ s1, s2 }))
+    const mapRaw = ok16.order?.fulfillments?.[0]?.restockMap
+    let mapOk = false
+    try { mapOk = !!mapRaw && Object.values(typeof mapRaw === 'string' ? JSON.parse(mapRaw) : mapRaw).every((k) => k === 'committed') } catch {}
+    check('C1 fulfillment records committed restockMap', mapOk, mapRaw ?? '')
+    const fc16 = await mut('fulfillmentCancel', `fulfillmentCancel(fulfillmentId: "${ok16.order?.fulfillments?.[0]?.id}") { order { id } userErrors { message } }`)
+    const s3 = await levels()
+    check('C1 cancel restores committed, does NOT inflate available', s3.a === s2.a && s3.c === s2.c + 2, JSON.stringify({ s2, s3 }))
+    await mut('orderCancel', `orderCancel(id: "${oid16}") { order { id } userErrors { message } }`)
+    const s4 = await levels()
+    check('C1 order cancel releases the reservation', s4.a === s0.a && s4.c === s0.c, JSON.stringify({ s0, s4 }))
+  }
+
+  // ── C4: server analytics = Shopify funnel (gross = merch, cancelled excluded) ──
+  {
+    const win = await GQL(`{ orders(first: 250) { edges { node { status createdAt subtotal discountCode { amount } refunds { amount } } } } }`)
+    const now16 = new Date()
+    const from16 = new Date(now16.getTime() - 60 * 864e5)
+    const rows16 = (win.orders?.edges ?? []).map((e) => e.node).filter((o) => o.status !== 'cancelled' && new Date(o.createdAt) >= from16)
+    const r2 = (x) => Math.round(x * 100) / 100
+    const expGross = r2(rows16.reduce((s, o) => s + o.subtotal, 0))
+    const expDisc = r2(rows16.reduce((s, o) => s + (o.discountCode?.amount ?? 0), 0))
+    const expRef = r2(rows16.reduce((s, o) => s + o.refunds.reduce((x, r) => x + r.amount, 0), 0))
+    const an16 = await GQL(`query($f: DateTime!, $t: DateTime!) { analytics(from: $f, to: $t) { grossSales discounts refunds netSales shipping taxes ordersCount } }`, { f: from16.toISOString(), t: now16.toISOString() })
+    const a16 = an16.analytics
+    check('C4 gross = merchandise subtotal, cancelled excluded', a16 && Math.abs(a16.grossSales - expGross) < 0.011, JSON.stringify({ got: a16?.grossSales, exp: expGross }))
+    check('C4 discounts/refunds sum line up', a16 && Math.abs(a16.discounts - expDisc) < 0.011 && Math.abs(a16.refunds - expRef) < 0.011, JSON.stringify({ discounts: a16?.discounts, expDisc, refunds: a16?.refunds, expRef }))
+    check('C4 net = gross − discounts − refunds (shipping NOT in net)', a16 && Math.abs(a16.netSales - (expGross - expDisc - expRef)) < 0.011, JSON.stringify({ net: a16?.netSales, exp: r2(expGross - expDisc - expRef) }))
+    check('C4 ordersCount excludes cancelled', a16?.ordersCount === rows16.length, JSON.stringify({ got: a16?.ordersCount, exp: rows16.length }))
+  }
+
+  // ── W9: domain host normalization end-to-end ──
+  {
+    const up = await GQL(`mutation { domainAdd(host: "QA-Mixed.EXAMPLE.com") { host primary } }`)
+    check('W9 domainAdd stores lowercase host', (up.domainAdd ?? []).some((d) => d.host === 'qa-mixed.example.com'), JSON.stringify(up.domainAdd))
+    const prim = await GQL(`mutation { domainSetPrimary(host: "QA-Mixed.example.COM") { host primary } }`)
+    check('W9 setPrimary matches normalized host', (prim.domainSetPrimary ?? []).find((d) => d.host === 'qa-mixed.example.com')?.primary === true, JSON.stringify(prim))
+    const bad = await GQL(`mutation { domainAdd(host: "not a host") { host } }`)
+    check('W9 invalid host rejected', !!bad.__error || (bad.domainAdd ?? []).every((d) => d.host !== 'not a host'), bad.__error ?? '')
+    const del16 = await GQL(`mutation { domainDelete(host: "qa-mixed.example.com") { host } }`)
+    check('W9 domainDelete removes normalized host', !(del16.domainDelete ?? []).some((d) => d.host === 'qa-mixed.example.com'), JSON.stringify(del16))
+  }
+
+  // ── W8: price list parentCompanyId survives GraphQL ──
+  {
+    const pl16 = await GQL(`{ priceLists { id companyId parentCompanyId } }`)
+    const scoped = (pl16.priceLists ?? []).find((l) => l.companyId)
+    check('W8 company-scoped list keeps parentCompanyId', !!scoped && scoped.parentCompanyId === scoped.companyId, JSON.stringify(pl16.priceLists))
+  }
+
+  // ── W6: merge moves orders + abandoned checkout + company (disposable fixtures) ──
+  {
+    const cb = await mut('customerCreate', `customerCreate(customer: { firstName: "QA", lastName: "MergeB", email: "qa-merge-b-${RUN}@example.com" }) { customer { id } userErrors { message } }`)
+    const ca = await mut('customerCreate', `customerCreate(customer: { firstName: "QA", lastName: "MergeA", email: "qa-merge-a-${RUN}@example.com" }) { customer { id } userErrors { message } }`)
+    // No abandonedCheckoutCreate mutation — fabricate the row directly, delete it after.
+    const abRow = await getPrisma().abandonedCheckout.create({
+      data: { id: `qa_ab_${RUN}`, customerId: cb.customer?.id ?? '', email: `qa-merge-b-${RUN}@example.com`, lineItems: [], total: 12.34 },
+    })
+    const mg = await mut('customerMerge', `customerMerge(primaryId: "${ca.customer?.id}", secondaryId: "${cb.customer?.id}") { customer { id } userErrors { message } }`)
+    check('W6 customerMerge succeeds', !!mg.customer?.id, JSON.stringify(mg.userErrors))
+    // Wide page: the moved-row assertion must never be eaten by pagination.
+    const abAfter = await GQL(`{ abandonedCheckouts(first: 250) { id customerId } }`)
+    check('W6 abandoned checkout moved to primary', (abAfter.abandonedCheckouts ?? []).find((c) => c.id === abRow.id)?.customerId === ca.customer?.id)
+    const sec = await GQL(`{ customer(id: "${cb.customer?.id}") { id } }`)
+    check('W6 secondary customer deleted', sec.customer == null)
+    await getPrisma().abandonedCheckout.delete({ where: { id: abRow.id } }).catch(() => {})
+
+    const cb2 = await mut('customerCreate', `customerCreate(customer: { firstName: "QA", lastName: "MergeB2", email: "qa-merge-b2-${RUN}@example.com" }) { customer { id } userErrors { message } }`)
+    // Company must be owned by the SECONDARY so the merge has to re-point it;
+    // owning it by the primary makes the assertion a false green.
+    const co = await mut('companyCreate', `companyCreate(company: { name: "QA Merge Co ${RUN}", customerId: "${cb2.customer?.id}" }) { company { id } userErrors { message } }`)
+    const mg2 = await mut('customerMerge', `customerMerge(primaryId: "${ca.customer?.id}", secondaryId: "${cb2.customer?.id}") { customer { id } userErrors { message } }`)
+    check('W6 merge with owned company succeeds', !!mg2.customer?.id, JSON.stringify(mg2.userErrors))
+    const coAfter = await GQL(`{ company(id: "${co.company?.id}") { id customerId } }`)
+    check('W6 company re-pointed to primary', coAfter.company?.customerId === ca.customer?.id, JSON.stringify(coAfter))
+  }
+
+  // ── W10a: returnClose requires approval ──
+  {
+    const candC = await pickStockedProduct(4)
+    const custC = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
+    if (!custC.customers?.edges?.length) throw new Error('no customers found for W10')
+    { // non-empty — guaranteed by the throw above; candC by pickStockedProduct
+      const vidC = candC.variants[0].id
+      const cidC = custC.customers.edges[0].node.id
+      const dC = await mut('draftOrderCreate', `draftOrderCreate(customerId: "${cidC}", items: [{ variantId: "${vidC}", quantity: 1 }]) { order { id } userErrors { message } }`)
+      const convC = await mut('draftOrderConvert', `draftOrderConvert(id: "${dC.order?.id}") { order { id } userErrors { message } }`)
+      const oidC = convC.order?.id
+      await mut('orderMarkAsPaid', `orderMarkAsPaid(id: "${oidC}") { order { id } userErrors { message } }`)
+      const liC = await GQL(`{ order(id: "${oidC}") { lineItems { id } } }`)
+      const retC = await mut('returnCreate', `returnCreate(orderId: "${oidC}", lines: [{ lineItemId: "${liC.order?.lineItems?.[0]?.id}", quantity: 1 }], reason: "QA16") { return { id status } userErrors { message } }`)
+      const closeEarly = await mut('returnClose', `returnClose(id: "${retC.return?.id}", markRefunded: false) { return { id status } userErrors { message } }`)
+      check('W10 closeReturn from requested blocked', closeEarly.userErrors?.length > 0, JSON.stringify(closeEarly))
+      await mut('returnApprove', `returnApprove(id: "${retC.return?.id}") { return { id status } userErrors { message } }`)
+      const closeOk = await mut('returnClose', `returnClose(id: "${retC.return?.id}", markRefunded: false) { return { id status } userErrors { message } }`)
+      check('W10 closeReturn after approve → complete', closeOk.return?.status === 'complete', JSON.stringify(closeOk))
+    }
+  }
+
+
+  // ── W6: digital (untracked) lines fulfill with zero stock ──
+  {
+    const digProd = await GQL(`{ product(id: "p_yoga-program-video") { variants { id sku } } }`)
+    const digVar = digProd.product?.variants?.find((v) => v.sku === 'YPV63')
+    const digCust = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
+    const digCid = digCust.customers?.edges?.[0]?.node?.id
+    if (digVar && digCid) {
+      const stockBefore = await GQL(`{ inventoryLevels { variantId available } }`)
+      const yogaBefore = (stockBefore.inventoryLevels ?? []).filter((l) => l.variantId === digVar.id).reduce((s, l) => s + l.available, 0)
+      const dd = await mut('draftOrderCreate', `draftOrderCreate(customerId: "${digCid}", items: [{ variantId: "${digVar.id}", quantity: 1 }]) { order { id } userErrors { message } }`)
+      const dc = await mut('draftOrderConvert', `draftOrderConvert(id: "${dd.order?.id}") { order { id lineItems { id variantId requiresShipping } } userErrors { message } }`)
+      const digLine = dc.order?.lineItems?.find((l) => l.variantId === digVar.id)
+      check('W6 digital line is untracked + non-shipping', digLine?.requiresShipping === false, JSON.stringify(dc.userErrors ?? dc.__error ?? 'no line'))
+      await mut('orderMarkAsPaid', `orderMarkAsPaid(id: "${dc.order?.id}") { order { id } userErrors { message } }`)
+      const digAfter = await GQL(`{ order(id: "${dc.order?.id}") { fulfillmentStatus fulfillments { id } } }`)
+      check('W6 digital-only convert auto-fulfills with zero fulfillments', digAfter.order?.fulfillmentStatus === 'fulfilled' && (digAfter.order?.fulfillments ?? []).length === 0, JSON.stringify(digAfter.order ?? digAfter.__error))
+      const stockAfter = await GQL(`{ inventoryLevels { variantId available } }`)
+      const yogaAfter = (stockAfter.inventoryLevels ?? []).filter((l) => l.variantId === digVar.id).reduce((s, l) => s + l.available, 0)
+      check('W6 digital fulfill moves no inventory', yogaAfter === yogaBefore, JSON.stringify({ before: yogaBefore, after: yogaAfter }))
+    } else {
+      check('W6 digital seed variant present', false, JSON.stringify({ variant: digVar ? 'ok' : 'none' }))
+    }
+  }
+  // ── M5: mixed digital + physical — fulfilling only the shippable line closes the order ──
+  {
+    const digProd5 = await GQL(`{ product(id: "p_yoga-program-video") { variants { id sku } } }`)
+    const digVar5 = digProd5.product?.variants?.find((v) => v.sku === 'YPV63')
+    const mugProd5 = await GQL(`{ product(id: "p_ceramic-coffee-mug") { variants { id } } }`)
+    const mugVar5 = mugProd5.product?.variants?.[0]
+    const cust5 = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
+    const cid5 = cust5.customers?.edges?.[0]?.node?.id
+    if (digVar5 && mugVar5 && cid5) {
+      const d5 = await mut('draftOrderCreate', `draftOrderCreate(customerId: "${cid5}", items: [{ variantId: "${mugVar5.id}", quantity: 1 }, { variantId: "${digVar5.id}", quantity: 1 }]) { order { id } userErrors { message } }`)
+      const conv5 = await mut('draftOrderConvert', `draftOrderConvert(id: "${d5.order?.id}") { order { id fulfillmentStatus lineItems { id variantId requiresShipping } } userErrors { message } }`)
+      check('M5 mixed convert stays unfulfilled (shippable line remains)', conv5.order?.fulfillmentStatus === 'unfulfilled', JSON.stringify(conv5.userErrors))
+      await mut('orderMarkAsPaid', `orderMarkAsPaid(id: "${conv5.order?.id}") { order { id } userErrors { message } }`)
+      const mugLine5 = conv5.order?.lineItems?.find((l) => l.variantId === mugVar5.id)
+      const yogaLine5 = conv5.order?.lineItems?.find((l) => l.variantId === digVar5.id)
+      const lv5 = await GQL(`{ locations { id } inventoryLevels { variantId locationId available committed } }`)
+      // Fulfill must happen where the CONVERT reservation sits — committed, not
+      // merely available. A location with available-only stock rejects the fulfill
+      // ("reserved 0, needs 1"); pick the highest-committed location deterministically.
+      const loc5 = ((lv5.inventoryLevels ?? []).filter((l) => l.variantId === mugVar5.id).sort((a, b) => b.committed - a.committed)[0])?.locationId ?? lv5.locations[0].id
+      const fu5 = await mut('orderFulfill', `orderFulfill(input: { orderId: "${conv5.order?.id}", lineItemIds: ["${mugLine5?.id}"], locationId: "${loc5}", notifyCustomer: false }) { order { fulfillmentStatus status fulfillments { lineItemIds } } userErrors { message } }`)
+      check('M5 mug-only fulfill → order fulfilled + closed', fu5.order?.fulfillmentStatus === 'fulfilled' && fu5.order?.status === 'closed', JSON.stringify(fu5.userErrors))
+      check('M5 digital line never appears on a fulfillment', (fu5.order?.fulfillments ?? []).every((f) => !(f.lineItemIds ?? []).includes(yogaLine5?.id)), JSON.stringify(fu5.order?.fulfillments))
+    } else {
+      check('M5 mixed seed variants present', false, JSON.stringify({ dig: !!digVar5, mug: !!mugVar5, cust: !!cid5 }))
+    }
+  }
+
+  // ── M7: duplicate collection; order → draft chain carries shipping/discount/gift card ──
+  {
+    const col7 = await GQL(`{ collections(first: 5) { edges { node { id title productIds } } } }`)
+    const srcCol = (col7.collections?.edges ?? []).map((e) => e.node).find((c) => (c.productIds ?? []).length > 0)
+    if (srcCol) {
+      const dup7 = await mut('collectionDuplicate', `collectionDuplicate(id: "${srcCol.id}") { collection { id title productIds } userErrors { message } }`)
+      check('M7 collectionDuplicate → new id, productIds preserved', !!dup7.collection?.id && dup7.collection.id !== srcCol.id && JSON.stringify([...(dup7.collection?.productIds ?? [])].sort()) === JSON.stringify([...srcCol.productIds].sort()), JSON.stringify(dup7.userErrors))
+    } else {
+      check('M7 source collection with products present', false, JSON.stringify(col7).slice(0, 100))
+    }
+
+    const gc7 = await mut('giftCardCreate', `giftCardCreate(input: { initialBalance: 25 }) { giftCard { id code balance } userErrors { message } }`)
+    const gcCode7 = gc7.giftCard?.code
+    const cust7 = await GQL(`{ customers(first: 1) { edges { node { id } } } }`)
+    const cid7 = cust7.customers?.edges?.[0]?.node?.id
+    const disc7 = await mut('discountCreate', `discountCreate(discount: { code: "QA7-${RUN}", title: "QA7 ${RUN}", type: "fixed_amount", method: "code", value: 2, minPurchase: 0 }) { discount { id code status } userErrors { message } }`)
+    const activeCode7 = disc7.discount?.code
+    const mug7 = await GQL(`{ product(id: "p_ceramic-coffee-mug") { variants { id } } }`)
+    const mugVar7 = mug7.product?.variants?.[0]?.id
+    if (gcCode7 && cid7 && mugVar7 && activeCode7) {
+      const d7 = await mut('draftOrderCreate', `draftOrderCreate(customerId: "${cid7}", items: [{ variantId: "${mugVar7}", quantity: 1 }], shippingPrice: 8.5, discountAmount: 2, discountCode: "${activeCode7}", giftCardCode: "${gcCode7}") { order { id } userErrors { message } }`)
+      const conv7 = await mut('draftOrderConvert', `draftOrderConvert(id: "${d7.order?.id}") { order { id shippingTitle shippingPrice discountCode { code amount } giftCardCode giftCardApplied } userErrors { message } }`)
+      const from7 = await mut('draftOrderCreateFromOrder', `draftOrderCreateFromOrder(orderId: "${conv7.order?.id}") { order { id shippingPrice discountCode { code amount } giftCardCode giftCardApplied } userErrors { message } }`)
+      check('M7 draft-from-order carries shipping + discount', from7.order?.shippingPrice === 8.5 && from7.order?.discountCode?.code === activeCode7, JSON.stringify(from7.userErrors ?? from7.order))
+      check('M7 draft-from-order carries gift card', from7.order?.giftCardCode === gcCode7 && from7.order?.giftCardApplied > 0, JSON.stringify({ giftCardCode: from7.order?.giftCardCode, giftCardApplied: from7.order?.giftCardApplied }))
+      const dupO7 = await mut('draftOrderDuplicate', `draftOrderDuplicate(id: "${from7.order?.id}") { order { id shippingPrice discountCode { code amount } giftCardCode giftCardApplied } userErrors { message } }`)
+      check('M7 draftOrderDuplicate carries the same tenders', dupO7.order?.shippingPrice === 8.5 && dupO7.order?.discountCode?.code === activeCode7 && dupO7.order?.giftCardCode === gcCode7, JSON.stringify(dupO7.userErrors ?? dupO7.order))
+    } else {
+      check('M7 fixtures present', false, JSON.stringify({ gc: !!gcCode7, cust: !!cid7, mug: !!mugVar7, disc: !!activeCode7 }))
+    }
+
+    // Payout rebucket on schedule change: settings.payouts = { schedule, dayOfWeek };
+    // ensurePayouts releases every unpaid payout so its transactions re-bucket under
+    // the new schedule. (The materialized key is process-local — single-server
+    // deployment; a multi-server deployment needs a shared cache, documented tradeoff.)
+    const st7 = await GQL(`{ settings { value } }`)
+    const rawVal7 = st7.settings?.value ?? {}
+    const val7 = typeof rawVal7 === 'string' ? JSON.parse(rawVal7) : rawVal7
+    const curPayouts7 = val7.payouts ?? { schedule: 'weekly', dayOfWeek: 'friday' }
+    const nextDay7 = curPayouts7.dayOfWeek === 'friday' ? 'monday' : 'friday'
+    const p7a = await GQL(`{ payouts { id status issuedAt } }`)
+    const schedA = (p7a.payouts ?? []).filter((p) => p.status === 'scheduled').map((p) => p.issuedAt).sort()
+    const up7 = await GQL(`mutation($v: JSON!) { settingsUpdate(value: $v) { value } }`, { v: { ...val7, payouts: { schedule: curPayouts7.schedule, dayOfWeek: nextDay7 } } })
+    check('M7 payout schedule day switches', !up7.__error, JSON.stringify(up7).slice(0, 140))
+    const p7b = await GQL(`{ payouts { id status issuedAt } }`)
+    const schedB = (p7b.payouts ?? []).filter((p) => p.status === 'scheduled').map((p) => p.issuedAt).sort()
+    check('M7 scheduled payouts re-bucket on schedule change', schedB.length > 0 && JSON.stringify(schedA) !== JSON.stringify(schedB), JSON.stringify({ schedA: schedA.slice(0, 3), schedB: schedB.slice(0, 3) }))
+    await GQL(`mutation($v: JSON!) { settingsUpdate(value: $v) { value } }`, { v: { ...val7, payouts: curPayouts7 } })
+  }
+
+}
+} catch (e) {
+  aborted = true
+  console.log('\nABORTED: ' + String(e?.message ?? e).slice(0, 300))
+} finally {
+  await runC3()
+  if (_prisma) await _prisma.$disconnect().catch(() => {})
+}
+
 console.log('\n════════════════════════════════════')
 console.log(`RESULT: ${pass} passed, ${fail} failed`)
 if (failures.length) {
   console.log('FAILURES:')
   failures.forEach((f) => console.log('  ✗ ' + f))
 }
-process.exit(fail > 0 ? 1 : 0)
+process.exit(fail > 0 || aborted ? 1 : 0)

@@ -555,8 +555,8 @@
  {
   "variantId": "p_ceramic-coffee-mug_v1",
   "locationId": "loc_1",
-  "available": 55,
-  "committed": 0,
+  "available": 53,
+  "committed": 2,
   "unavailable": 0
  },
  {

@@ -2,15 +2,18 @@ import { getStore } from '@/store/useStore'
 import { uid } from '@/lib/id'
 import { delay } from '@/lib/delay'
 import { CURRENT_USER } from '@/lib/constants'
-import { syncMutation, gqlLiteral } from '@/services/api'
+import { IS_REMOTE, gqlRequest, gqlLiteral, syncMutation, refreshFromServer } from '@/services/api'
+import { ORDER_SELECTION, recomputeFulfillmentStatus } from '@/services/ordersService'
 import type { ReturnRecord } from '@/types/parity'
-import type { FulfillmentEvent, Order, TimelineEvent } from '@/types'
+import type { Fulfillment, FulfillmentEvent, InventoryHistoryEntry, Order, TimelineEvent } from '@/types'
 
 /**
  * Thin order-mutation wrappers for the return lifecycle + fulfillment tracking
  * (returnApprove/Decline/Cancel, fulfillmentCancel, fulfillmentEventCreate).
- * Follows the service pattern: local store patch + timeline/activity entries,
- * then syncMutation reconciles with the backend (debounced).
+ * Server-first where the backend owns the semantics (fulfillmentCancel):
+ * remote mode awaits the mutation and mirrors the returned order + restock;
+ * offline mode reproduces the same rules locally. Returns/fulfillment events
+ * keep the local patch + syncMutation reconcile pattern.
  */
 
 function addTimeline(orderId: string, message: string, type: TimelineEvent['type']): void {
@@ -97,17 +100,86 @@ export const FULFILLMENT_EVENT_STATUSES: Record<string, string> = {
   FAILURE: 'Failure',
 }
 
+type RestockKind = 'committed' | 'available' | 'none'
+
+/** The server records this map at fulfill time; scalar JSON now, legacy rows carried a JSON string or missed it → 'available'. */
+function parseRestockMap(raw: string | Record<string, RestockKind> | undefined | null): Record<string, RestockKind> {
+  if (!raw) return {}
+  if (typeof raw === 'object') return raw
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') return parsed as Record<string, RestockKind>
+  } catch {
+    // invalid map falls back to legacy behavior
+  }
+  return {}
+}
+
+/** Reverse the stock consumed by a fulfillment at its ship-from location (mirrors the backend). */
+function restockFulfillment(order: Order, fulfillment: Fulfillment): void {
+  const restock = parseRestockMap(fulfillment.restockMap)
+  const store = getStore()
+  const history: InventoryHistoryEntry[] = []
+  for (const lid of fulfillment.lineItemIds) {
+    const li = order.lineItems.find((x) => x.id === lid)
+    if (!li) continue
+    const kind = restock[lid] ?? 'available'
+    if (kind === 'none') continue
+    const level = store.inventoryLevels.find((l) => l.variantId === li.variantId && l.locationId === fulfillment.locationId)
+    if (!level) continue
+    store.upsertInventoryLevel({
+      ...level,
+      committed: kind === 'committed' ? level.committed + li.quantity : level.committed,
+      available: kind === 'available' ? level.available + li.quantity : level.available,
+    })
+    history.push({
+      id: uid('ih'),
+      variantId: level.variantId,
+      locationId: level.locationId,
+      change: kind === 'available' ? li.quantity : 0,
+      resultingAvailable: kind === 'available' ? level.available + li.quantity : level.available,
+      reason: 'fulfillment_cancelled',
+      createdAt: new Date().toISOString(),
+      author: CURRENT_USER.name,
+    })
+  }
+  if (history.length > 0) store.addInventoryHistory(history)
+}
+
 export async function cancelFulfillment(orderId: string, fulfillmentId: string): Promise<void> {
-  await delay(350)
   const order = findOrder(orderId)
   const fulfillment = order.fulfillments.find((f) => f.id === fulfillmentId)
   if (!fulfillment) throw new Error('Fulfillment not found')
   if (fulfillment.status === 'canceled') throw new Error('Fulfillment already canceled')
-  getStore().patchOrder(orderId, {
-    fulfillments: order.fulfillments.map((f) => (f.id === fulfillmentId ? { ...f, status: 'canceled' as const } : f)),
-  })
-  syncMutation(`mutation { fulfillmentCancel(fulfillmentId: ${gqlLiteral(fulfillmentId)}) { userErrors { message } } }`)
-  addTimeline(orderId, `Fulfillment canceled${fulfillment.trackingNumber ? ` · tracking ${fulfillment.carrier ?? ''} ${fulfillment.trackingNumber}` : ''}`, 'fulfillment')
+  if (IS_REMOTE) {
+    const data = await gqlRequest<{ fulfillmentCancel: { order: Partial<Order> | null; userErrors: { field: string[]; message: string }[] } }>(
+      `mutation _ { fulfillmentCancel(fulfillmentId: ${gqlLiteral(fulfillmentId)}) { order { ${ORDER_SELECTION} } userErrors { field message } } }`,
+    )
+    const payload = data.fulfillmentCancel
+    if (payload.userErrors.length > 0) throw new Error(payload.userErrors.map((e) => e.message).join('; '))
+    if (!payload.order) throw new Error('Fulfillment cancel failed')
+    getStore().patchOrder(orderId, payload.order)
+    // The server already restored stock (committed→committed / legacy→available /
+    // untracked→none). A local restock here would double it. Refresh DIRECTLY —
+    // not via the 600ms debounce, whose fetch can start before the server commits
+    // and hydrate stale pre-cancel state over the fresh patch. The queued-retry in
+    // refreshFromServer makes the overlap safe.
+    void refreshFromServer()
+    logActivity('Canceled fulfillment', 'order', orderId)
+    return
+  }
+  // Offline demo: same rules as the server — remove the fulfillment, restock, recompute.
+  await delay(350)
+  restockFulfillment(order, fulfillment)
+  const remaining = order.fulfillments.filter((f) => f.id !== fulfillmentId)
+  const fulfillmentStatus = recomputeFulfillmentStatus({ ...order, fulfillments: remaining })
+  const patch: Partial<Order> = { fulfillments: remaining, fulfillmentStatus }
+  if (order.status === 'closed' && fulfillmentStatus !== 'fulfilled') {
+    patch.status = 'open'
+    patch.closedAt = undefined
+  }
+  getStore().patchOrder(orderId, patch)
+  addTimeline(orderId, `Fulfillment cancelled — ${fulfillment.lineItemIds.length} item(s) restocked`, 'fulfillment')
   logActivity('Canceled fulfillment', 'order', orderId)
 }
 
