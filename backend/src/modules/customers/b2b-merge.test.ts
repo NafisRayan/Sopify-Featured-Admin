@@ -28,6 +28,7 @@ test('b2bPricing: scoped list wins on location match, ignored without order loca
   }
   const prisma = new PrismaService()
   await prisma.$connect()
+  const stamp = Date.now()
   const custId = `cus_qa_b2b_${stamp}`
   const companyId = `com_qa_b2b_${stamp}`
   const variantId = 'p_kids-organic-tee_v1'
@@ -83,6 +84,7 @@ test('mergeCustomers re-points orders, gift cards, abandoned checkouts and compa
   }
   const prisma = new PrismaService()
   await prisma.$connect()
+  const svc = new CustomersService(prisma)
   const stamp = Date.now()
   const primaryId = `cus_qa_mg_a_${stamp}`
   const secondaryId = `cus_qa_mg_b_${stamp}`

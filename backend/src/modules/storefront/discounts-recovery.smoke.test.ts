@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildSchema } from 'graphql'
 import { StorefrontService } from './storefront.service'
+import { ReviewsService } from '../products/reviews.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 test('Discounts & Abandoned Cart Recovery Lifecycle: Discounts -> Abandoned Tracking -> Recovery', async () => {
   const storefrontSdl = readFileSync(join(__dirname, 'storefront.graphql'), 'utf8')
@@ -93,7 +95,8 @@ test('Discounts & Abandoned Cart Recovery Lifecycle: Discounts -> Abandoned Trac
     },
   }
 
-  const service = new StorefrontService(mockPrisma as any)
+  const prismaStub = mockPrisma as unknown as PrismaService // test mock implements only the delegates these flows touch
+  const service = new StorefrontService(prismaStub, new ReviewsService(prismaStub))
   service.onModuleInit()
 
   // 1. Create Cart with 2x $50 item = $100 subtotal

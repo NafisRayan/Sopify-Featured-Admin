@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildSchema } from 'graphql'
 import { StorefrontService } from '../storefront/storefront.service'
+import { ReviewsService } from '../products/reviews.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { OrdersService } from './orders.service'
 
 test('Returns & Reverse Logistics Lifecycle: Customer Request -> Merchant Approval -> Return Close & Restock', async () => {
@@ -104,7 +106,8 @@ test('Returns & Reverse Logistics Lifecycle: Customer Request -> Merchant Approv
     product: { findMany: async () => [] },
   }
 
-  const storefrontService = new StorefrontService(mockPrisma as any)
+  const prismaStub = mockPrisma as unknown as PrismaService // test mock implements only the delegates these flows touch
+  const storefrontService = new StorefrontService(prismaStub, new ReviewsService(prismaStub))
   storefrontService.onModuleInit()
 
   const ordersService = new OrdersService(mockPrisma as any)

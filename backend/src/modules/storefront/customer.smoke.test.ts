@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildSchema, graphql } from 'graphql'
 import { StorefrontService } from './storefront.service'
+import { ReviewsService } from '../products/reviews.service'
+import { PrismaService } from '../../prisma/prisma.service'
 
 test('Customer Account Lifecycle: Register -> Login -> Profile Query -> Address Management', async () => {
   const storefrontSdl = readFileSync(join(__dirname, 'storefront.graphql'), 'utf8')
@@ -89,7 +91,8 @@ test('Customer Account Lifecycle: Register -> Login -> Profile Query -> Address 
     inventoryLevel: { findMany: async () => [] },
   }
 
-  const storefrontService = new StorefrontService(mockPrisma as any)
+  const prismaStub = mockPrisma as unknown as PrismaService // test mock implements only the delegates these flows touch
+  const storefrontService = new StorefrontService(prismaStub, new ReviewsService(prismaStub))
   storefrontService.onModuleInit()
 
   // 1. Register Customer

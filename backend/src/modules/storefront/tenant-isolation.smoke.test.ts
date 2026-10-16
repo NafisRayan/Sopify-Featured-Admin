@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { buildSchema, graphql } from 'graphql'
 import { tenantContext } from '../../common/tenant.middleware'
 import { StorefrontService } from './storefront.service'
+import { ReviewsService } from '../products/reviews.service'
+import { PrismaService } from '../../prisma/prisma.service'
 import { ProductsService } from '../products/products.service'
 
 test('Multi-Tenant Platform Isolation: Store A (Northstar) vs Store B (Apex Outdoor)', async () => {
@@ -86,7 +88,8 @@ test('Multi-Tenant Platform Isolation: Store A (Northstar) vs Store B (Apex Outd
     storeSettings: { findUnique: async () => null },
   }
 
-  const storefrontService = new StorefrontService(mockPrisma as any)
+  const prismaStub = mockPrisma as unknown as PrismaService // test mock implements only the delegates these flows touch
+  const storefrontService = new StorefrontService(prismaStub, new ReviewsService(prismaStub))
   storefrontService.onModuleInit()
 
   // 1. Query Storefront under Tenant Context: Store A (Northstar Goods)
