@@ -176,6 +176,7 @@ model AbandonedCheckout {
   lineItems      Json
   total          Float
   recoveryStatus String   @default("not_recovered")
+  recoveryUrl    String?
 
   @@index([storeId])
   @@schema("northstar")
@@ -320,6 +321,7 @@ model Campaign {
 
 model Payout {
   id          String    @id
+  storeId     String    @default("store_northstar")
   status      String
   amount      Float
   currency    String    @default("USD")
@@ -327,11 +329,13 @@ model Payout {
   arrivedAt   DateTime?
   bankAccount String
 
+  @@index([storeId])
   @@schema("northstar")
 }
 
 model BalanceTransaction {
   id          String   @id
+  storeId     String   @default("store_northstar")
   at          DateTime
   type        String
   amount      Float
@@ -341,14 +345,15 @@ model BalanceTransaction {
   description String
   payoutId    String?
 
+  @@index([storeId])
   @@schema("northstar")
 }
-
 // ─── Gift cards ────────────────────────────────────────────────────────────
 
 model GiftCard {
   id             String    @id
-  code           String    @unique
+  storeId        String    @default("store_northstar")
+  code           String
   customerId     String?
   initialBalance Float
   balance        Float
@@ -359,6 +364,8 @@ model GiftCard {
   createdAt      DateTime  @default(now())
   history        Json
 
+  @@unique([storeId, code])
+  @@index([storeId])
   @@schema("northstar")
 }
 

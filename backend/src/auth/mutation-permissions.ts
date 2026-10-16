@@ -55,6 +55,7 @@ export const MUTATION_PERMISSIONS: Record<string, PermissionSpec> = {
   returnCreate: { resource: 'orders', action: 'refund' },
   returnClose: { resource: 'orders', action: 'refund' },
   abandonedCheckoutRecoverySend: { resource: 'orders', action: 'edit' },
+  abandonedCheckoutSendRecovery: { resource: 'orders', action: 'edit' },
   abandonedCheckoutConvert: { resource: 'orders', action: 'edit' },
   locationCreate: { resource: 'products', action: 'edit' },
   locationUpdate: { resource: 'products', action: 'edit' },

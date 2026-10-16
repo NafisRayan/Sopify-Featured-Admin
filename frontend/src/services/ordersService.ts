@@ -679,14 +679,24 @@ export async function deleteDrafts(ids: string[]): Promise<void> {
 }
 
 // ─── Abandoned checkouts ───────────────────────────────────────────────────
+export async function sendRecoveryEmail(checkoutId: string, customDiscountCode?: string): Promise<string> {
+  if (IS_REMOTE) {
+    const { entity, userErrors } = await mutatePayload(
+      'abandonedCheckoutSendRecovery',
+      `abandonedCheckoutSendRecovery(id: ${gqlLiteral(checkoutId)}${customDiscountCode ? `, customDiscountCode: ${gqlLiteral(customDiscountCode)}` : ''}) { abandonedCheckout { id recoveryStatus recoveryUrl } recoveryUrl userErrors { field message } }`,
+    )
+    if (userErrors.length > 0) throw new Error(userErrors[0].message)
+    const res = entity as { recoveryUrl?: string } | null
+    const recoveryLink = res?.recoveryUrl || `/store/checkout?recover=${encodeURIComponent(checkoutId)}&discount=COMEBACK`
+    getStore().patchAbandoned(checkoutId, { recoveryStatus: 'email_sent' })
+    return recoveryLink
+  }
 
-export async function sendRecoveryEmail(checkoutId: string): Promise<string> {
   await delay(350)
   const store = getStore()
   const co = store.abandoned.find((a) => a.id === checkoutId)
   if (!co) throw new Error('Checkout not found')
   store.patchAbandoned(checkoutId, { recoveryStatus: 'email_sent' })
-  syncMutation(`mutation { abandonedCheckoutRecoverySend(id: ${gqlLiteral(checkoutId)}) { userErrors { message } } }`)
   const recoveryLink = `/store/checkout?recover=${encodeURIComponent(checkoutId)}&discount=COMEBACK`
   return recoveryLink
 }

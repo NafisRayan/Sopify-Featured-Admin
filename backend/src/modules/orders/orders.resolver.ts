@@ -275,6 +275,27 @@ export class OrdersResolver {
   }
 
   @Mutation()
+  async abandonedCheckoutSendRecovery(
+    @Args('id') id: string,
+    @Args('customDiscountCode', { nullable: true }) customDiscountCode?: string,
+  ) {
+    try {
+      const res = await this.service.sendRecovery(id, customDiscountCode)
+      return {
+        abandonedCheckout: res.abandonedCheckout,
+        recoveryUrl: res.recoveryUrl,
+        userErrors: [],
+      }
+    } catch (e) {
+      return {
+        abandonedCheckout: null,
+        recoveryUrl: null,
+        userErrors: [{ field: ['id'], message: (e as Error).message }],
+      }
+    }
+  }
+
+  @Mutation()
   async abandonedCheckoutConvert(@Args('id') id: string) {
     try {
       return { order: await this.service.convertAbandoned(id), userErrors: [] }

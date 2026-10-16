@@ -138,6 +138,13 @@ type AbandonedCheckout {
   lineItems: [OrderLineItem!]!
   total: Float!
   recoveryStatus: String!
+  recoveryUrl: String
+}
+
+type AbandonedCheckoutSendRecoveryPayload {
+  abandonedCheckout: AbandonedCheckout
+  recoveryUrl: String
+  userErrors: [UserError!]!
 }
 
 input OrderLineItemInput {

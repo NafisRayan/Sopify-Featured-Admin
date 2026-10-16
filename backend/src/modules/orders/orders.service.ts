@@ -569,7 +569,7 @@ export class OrdersService {
       const giftRef = parseJson<{ code?: string; amount?: number } | null>(order.giftCard as string, null)
       const giftApplied = giftRef?.amount ?? 0
       if (giftRef?.code && giftApplied > 0) {
-        const card = await this.prisma.giftCard.findUnique({ where: { code: giftRef.code } })
+        const card = await this.prisma.giftCard.findFirst({ where: { code: giftRef.code } })
         if (card) {
           const history = parseJson<unknown[]>(card.history as string, [])
           history.push({
@@ -580,7 +580,7 @@ export class OrdersService {
             note: `Restored from cancelled order ${order.name}`,
           })
           await this.prisma.giftCard.update({
-            where: { code: card.code },
+            where: { id: card.id },
             data: { balance: roundMoney(card.balance + giftApplied), history: toJson(history) },
           })
           await this.prisma.balanceTransaction.create({
@@ -993,7 +993,7 @@ export class OrdersService {
     }
     const giftRef = parseJson<{ code?: string; amount?: number } | null>(order.giftCard as string, null)
     if (giftRef?.code && giftCardRestoreAmount > 0) {
-      const card = await this.prisma.giftCard.findUnique({ where: { code: giftRef.code } })
+      const card = await this.prisma.giftCard.findFirst({ where: { code: giftRef.code } })
       if (card) {
         const history = parseJson<unknown[]>(card.history as string, [])
         history.push({
@@ -1004,7 +1004,7 @@ export class OrdersService {
           note: `Restored from refund on ${order.name}`,
         })
         await this.prisma.giftCard.update({
-          where: { code: card.code },
+          where: { id: card.id },
           data: { balance: roundMoney(card.balance + giftCardRestoreAmount), history: toJson(history) },
         })
         await this.prisma.balanceTransaction.create({
@@ -1321,7 +1321,7 @@ export class OrdersService {
       }
       const giftRef = parseJson<{ code?: string; amount?: number } | null>(order.giftCard as string, null)
       if (giftRef?.code && giftCardRestoreAmount > 0) {
-        const card = await this.prisma.giftCard.findUnique({ where: { code: giftRef.code } })
+        const card = await this.prisma.giftCard.findFirst({ where: { code: giftRef.code } })
         if (card) {
           const history = parseJson<unknown[]>(card.history as string, [])
           history.push({
@@ -1332,7 +1332,7 @@ export class OrdersService {
             note: `Restored from return on ${order.name}`,
           })
           await this.prisma.giftCard.update({
-            where: { code: card.code },
+            where: { id: card.id },
             data: { balance: roundMoney(card.balance + giftCardRestoreAmount), history: toJson(history) },
           })
           await this.prisma.balanceTransaction.create({
@@ -1371,6 +1371,33 @@ export class OrdersService {
     await this.prisma.abandonedCheckout.update({ where: { id }, data: { recoveryStatus: 'email_sent' } })
     const updated = await this.prisma.abandonedCheckout.findUnique({ where: { id } })
     return { ...updated, lineItems: parseJson<unknown[]>(updated!.lineItems as string, []) }
+  }
+
+  async sendRecovery(id: string, customDiscountCode?: string): Promise<{ abandonedCheckout: any; recoveryUrl: string }> {
+    const tenant = currentTenant()
+    const co = await this.prisma.abandonedCheckout.findFirst({
+      where: { id, storeId: tenant.id },
+    })
+    if (!co) throw new Error('Abandoned checkout not found')
+
+    const code = customDiscountCode?.trim().toUpperCase() || 'COMEBACK'
+    const recoveryUrl = `/store/checkout?recover=${encodeURIComponent(co.id)}&discount=${encodeURIComponent(code)}`
+
+    const updated = await this.prisma.abandonedCheckout.update({
+      where: { id: co.id },
+      data: {
+        recoveryStatus: 'email_sent',
+        recoveryUrl,
+      },
+    })
+
+    return {
+      abandonedCheckout: {
+        ...updated,
+        lineItems: parseJson<unknown[]>(updated.lineItems as string, []),
+      },
+      recoveryUrl,
+    }
   }
 
   async convertAbandoned(id: string): Promise<any> {
@@ -1576,7 +1603,7 @@ export class OrdersService {
     let giftCardObj: { code: string; amount: number } | null = null
     const rawGift = input.giftCardCode ? String(input.giftCardCode).trim().toUpperCase() : null
     if (rawGift) {
-      const card = await this.prisma.giftCard.findUnique({ where: { code: rawGift } })
+      const card = await this.prisma.giftCard.findFirst({ where: { code: rawGift } })
       if (!card) throw new Error(`Gift card ${rawGift} not found`)
       if (card.status === 'disabled') throw new Error(`Gift card ${rawGift} is disabled`)
       if (card.expiresAt && new Date() > card.expiresAt) throw new Error(`Gift card ${rawGift} has expired`)
@@ -1712,7 +1739,7 @@ export class OrdersService {
     let validatedCard: GiftCardRow | null = null
     let appliedGift = 0
     if (giftRef?.code && (giftRef.amount ?? 0) > 0) {
-      const card = await this.prisma.giftCard.findUnique({ where: { code: giftRef.code } })
+      const card = await this.prisma.giftCard.findFirst({ where: { code: giftRef.code } })
       if (!card) throw new Error(`Gift card ${giftRef.code} not found`)
       if (card.status === 'disabled') throw new Error(`Gift card ${giftRef.code} is disabled`)
       if (card.expiresAt && new Date() > card.expiresAt) throw new Error(`Gift card ${giftRef.code} has expired`)
@@ -1746,7 +1773,7 @@ export class OrdersService {
       const history = parseJson<unknown[]>(validatedCard.history as string, [])
       history.push({ id: uid('gch'), at: new Date().toISOString(), type: 'redeemed', amount: -appliedGift, note: `Applied to order ${draft.name}` })
       await this.prisma.giftCard.update({
-        where: { code: validatedCard.code },
+        where: { id: validatedCard.id },
         data: { balance: roundMoney(validatedCard.balance - appliedGift), history: toJson(history) },
       })
       await this.prisma.balanceTransaction.create({

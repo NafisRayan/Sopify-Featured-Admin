@@ -87,6 +87,8 @@ export async function reseed(prisma: PrismaClient, dataDir?: string): Promise<Re
   // its full duration (~80s over Neon), hence the explicit long timeout.
   await prisma.$transaction(
     async (trx) => {
+      await (trx as any).productReview?.deleteMany()
+      await (trx as any).webhookEvent?.deleteMany()
       await (trx as any).store?.deleteMany()
       await trx.savedSearch.deleteMany()
       await trx.priceListEntry.deleteMany()
@@ -254,6 +256,26 @@ export async function reseed(prisma: PrismaClient, dataDir?: string): Promise<Re
     ),
   )
   await many('savedSearch', savedSearches.map((s) => ({ ...strip(s, 'createdAt'), createdAt: at(s.createdAt) })))
+  // Seed starter product review for social proof baseline
+  const firstProd = products[0]
+  if (firstProd) {
+    await (tx as any).productReview?.create({
+      data: {
+        id: 'rev_seed_1',
+        storeId: 'store_northstar',
+        productId: firstProd.id as string,
+        customerName: 'Elena Rostova',
+        customerEmail: 'elena@example.com',
+        rating: 5,
+        title: 'Exceptional build quality',
+        body: 'The canvas weave and stitching have held up across months of daily commuting.',
+        status: 'published',
+        isVerifiedBuyer: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    })
+  }
     },
     { timeout: 300_000, maxWait: 10_000 },
   )

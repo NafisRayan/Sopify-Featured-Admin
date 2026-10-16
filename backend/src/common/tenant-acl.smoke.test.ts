@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { TenantMiddleware, DEFAULT_STORE } from './tenant.middleware'
 import { staffContext } from '../auth/staff-context'
+import { createTenantPrismaClient } from '../prisma/tenant-prisma'
 
 test('Tenant ACL Security: Regular staff session with foreign x-store-id is rejected with HTTP 403', async () => {
   const storeDb = [
@@ -141,4 +142,80 @@ test('Tenant ACL Security: Superadmin role bypasses store restrictions', async (
 
   assert.equal(nextCalled, true, 'Superadmin must bypass cross-store check')
   assert.equal(req.store.id, 'store_apex')
+})
+
+test('Centralized Tenant Scoping: Prisma client extension isolates customers, discounts, and gift cards across stores', async () => {
+  const customerDb: Array<{ id: string; storeId: string; email: string }> = [
+    { id: 'c1', storeId: 'store_northstar', email: 'northstar.shopper@example.com' },
+    { id: 'c2', storeId: 'store_apex', email: 'apex.shopper@example.com' },
+  ]
+
+  const discountDb: Array<{ id: string; storeId: string; code: string }> = [
+    { id: 'd1', storeId: 'store_northstar', code: 'NORTH20' },
+    { id: 'd2', storeId: 'store_apex', code: 'APEX20' },
+  ]
+
+  const giftCardDb: Array<{ id: string; storeId: string; code: string; balance: number }> = [
+    { id: 'g1', storeId: 'store_northstar', code: 'GC-NORTH', balance: 50 },
+    { id: 'g2', storeId: 'store_apex', code: 'GC-APEX', balance: 100 },
+  ]
+
+  const basePrisma = {
+    customer: {
+      findMany: async (args?: any) => {
+        return customerDb.filter((c) => !args?.where?.storeId || c.storeId === args.where.storeId)
+      },
+      create: async (args?: any) => {
+        customerDb.push(args?.data || {})
+        return args?.data || {}
+      },
+    },
+    discount: {
+      findMany: async (args?: any) => {
+        return discountDb.filter((d) => !args?.where?.storeId || d.storeId === args.where.storeId)
+      },
+    },
+    giftCard: {
+      findMany: async (args?: any) => {
+        return giftCardDb.filter((g) => !args?.where?.storeId || g.storeId === args.where.storeId)
+      },
+    },
+  }
+
+  const northstarClient = createTenantPrismaClient(basePrisma as any, 'store_northstar')
+  const apexClient = createTenantPrismaClient(basePrisma as any, 'store_apex')
+
+  // 1. Customer read isolation
+  const northstarCustomers = await northstarClient.customer.findMany()
+  assert.equal(northstarCustomers.length, 1)
+  assert.equal(northstarCustomers[0].email, 'northstar.shopper@example.com')
+
+  const apexCustomers = await apexClient.customer.findMany()
+  assert.equal(apexCustomers.length, 1)
+  assert.equal(apexCustomers[0].email, 'apex.shopper@example.com')
+
+  // 2. Discount read isolation
+  const northstarDiscounts = await northstarClient.discount.findMany()
+  assert.equal(northstarDiscounts.length, 1)
+  assert.equal(northstarDiscounts[0].code, 'NORTH20')
+
+  const apexDiscounts = await apexClient.discount.findMany()
+  assert.equal(apexDiscounts.length, 1)
+  assert.equal(apexDiscounts[0].code, 'APEX20')
+
+  // 3. Gift Card read isolation
+  const northstarGiftCards = await northstarClient.giftCard.findMany()
+  assert.equal(northstarGiftCards.length, 1)
+  assert.equal(northstarGiftCards[0].code, 'GC-NORTH')
+
+  const apexGiftCards = await apexClient.giftCard.findMany()
+  assert.equal(apexGiftCards.length, 1)
+  assert.equal(apexGiftCards[0].code, 'GC-APEX')
+
+  // 4. Create write isolation: storeId automatically injected
+  await northstarClient.customer.create({
+    data: { id: 'c3', email: 'auto.scoped@example.com' },
+  })
+  const createdRecord = customerDb.find((c) => c.id === 'c3')
+  assert.equal(createdRecord?.storeId, 'store_northstar', 'Extension must automatically attach storeId on create')
 })
