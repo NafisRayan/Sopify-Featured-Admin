@@ -1,5 +1,5 @@
 import { parseJson } from '../common/helpers'
-
+import { generateCarrierTrackingUrl } from './carrier'
 /** Row → GraphQL type mappers (JSON columns + computed fields) */
 
 export interface Row {
@@ -52,15 +52,51 @@ export function mapCustomer(c: Row, stats?: { ordersCount: number; totalSpent: n
 
 export function mapOrder(o: Row, risk?: { level: string; signals: string[] } | null): Row {
   const gc = parseJson<{ code?: string; amount?: number } | null>(o.giftCard as string, null)
+  const rawFulfillments = parseJson<Array<Record<string, any>>>(o.fulfillments as string, [])
+  const rawLineItems = parseJson<Array<Record<string, any>>>(o.lineItems as string, [])
+
+  const fulfillments = rawFulfillments.map((f) => {
+    const trackingNumber = f.trackingNumber || null
+    const carrier = f.carrier || null
+    const trackingUrl = f.trackingUrl || generateCarrierTrackingUrl(carrier, trackingNumber)
+    const trackingInfo = trackingNumber
+      ? [{ company: carrier, number: trackingNumber, url: trackingUrl }]
+      : []
+
+    const fulfillmentLineItems = {
+      edges: (f.lineItemIds || []).map((lid: string) => {
+        const item = rawLineItems.find((li) => li.id === lid)
+        return {
+          cursor: lid,
+          node: {
+            id: lid,
+            quantity: f.quantities?.[lid] ?? item?.quantity ?? 1,
+            lineItem: item ? { ...item, requiresShipping: item.requiresShipping ?? true } : null,
+          },
+        }
+      }),
+      pageInfo: { hasNextPage: false, hasPreviousPage: false },
+    }
+
+    return {
+      ...f,
+      trackingNumber,
+      carrier,
+      trackingUrl,
+      trackingInfo,
+      fulfillmentLineItems,
+    }
+  })
+
   return {
     ...o,
-    lineItems: parseJson<unknown[]>(o.lineItems as string, []),
+    lineItems: rawLineItems,
     shippingAddress: parseJson<unknown>(o.shippingAddress as string, {}),
     billingAddress: parseJson<unknown>(o.billingAddress as string, {}),
     discountCode: parseJson<unknown>(o.discountCode as string, null),
     tags: parseJson<unknown[]>(o.tags as string, []),
     timeline: parseJson<unknown[]>(o.timeline as string, []),
-    fulfillments: parseJson<unknown[]>(o.fulfillments as string, []),
+    fulfillments,
     refunds: parseJson<unknown[]>(o.refunds as string, []),
     giftCard: gc,
     giftCardCode: gc?.code ?? null,
@@ -70,7 +106,6 @@ export function mapOrder(o: Row, risk?: { level: string; signals: string[] } | n
     riskSignals: risk?.signals ?? [],
   }
 }
-
 export function mapCompany(c: Row, totalSpent = 0): Row {
   return {
     ...c,

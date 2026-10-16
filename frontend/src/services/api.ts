@@ -14,6 +14,18 @@ import type { AnalyticsSummary } from '@/types'
 export const API_URL: string | undefined = (import.meta as any).env?.VITE_API_URL || undefined
 export const IS_REMOTE = Boolean(API_URL)
 
+export function getActiveStoreId(): string {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('ns_active_store_id') || 'store_northstar'
+  }
+  return 'store_northstar'
+}
+
+export function setActiveStoreId(storeId: string): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('ns_active_store_id', storeId)
+  }
+}
 export interface StaffSessionInfo {
   id: string
   name: string
@@ -60,10 +72,14 @@ export async function gqlRequest<T = any>(query: string, variables?: Record<stri
   if (!API_URL) throw new Error('API_URL not configured')
   const isMutation = /^\s*mutation\b/.test(query)
   try {
+    const activeStoreId = getActiveStoreId()
     const res = await fetch(`${API_URL}/graphql`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-store-id': activeStoreId,
+      },
       body: JSON.stringify({ query, variables }),
       // Hard cap: a stalled socket (e.g. mid-restart backend) would otherwise hang
       // the bootstrap reconcile guard (`refreshing`) forever. Callers running long
@@ -243,7 +259,7 @@ export async function mutatePayload(field: string, mutation: string, opts?: { re
 export async function fetchAnalytics(from: string, to: string): Promise<AnalyticsSummary | null> {
   if (!IS_REMOTE) return null
   const data = await gqlRequest<{ analytics: AnalyticsSummary }>(
-    `{ analytics(from: ${q(from)}, to: ${q(to)}) { from to grossSales discounts refunds netSales shipping taxes giftCardSales ordersCount avgOrderValue returningCustomerRate topProducts { productId title units revenue } } }`,
+    `{ analytics(from: ${q(from)}, to: ${q(to)}) { from to grossSales discounts returns refunds netSales shipping taxes totalSales giftCardSales ordersCount unitsSold avgOrderValue averageOrderValue returningCustomerRate salesDelta ordersDelta series { date sales orders } topProducts { productId title imageSrc units revenue sales } salesByChannel { channel sales orders percentage } } }`,
   )
   return data.analytics ?? null
 }

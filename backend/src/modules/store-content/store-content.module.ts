@@ -505,6 +505,61 @@ export class StoreContentService {
     await this.updateSettings({ ...settings.value, domains })
     return this.domains()
   }
+  async stores() {
+    const rows = await this.prisma.store.findMany({ orderBy: { createdAt: 'asc' } })
+    if (rows.length === 0) {
+      const defaultStore = await this.prisma.store.create({
+        data: {
+          id: 'store_northstar',
+          name: 'Northstar Goods',
+          slug: 'northstar',
+          currency: 'USD',
+          status: 'active',
+        },
+      })
+      return [defaultStore]
+    }
+    return rows
+  }
+
+  async storeCreate(input: { name: string; slug: string; currency?: string; domain?: string }) {
+    const slug = (input.slug || input.name).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')
+    const existing = await this.prisma.store.findFirst({ where: { slug } })
+    if (existing) {
+      throw new Error(`Store with handle "${slug}" already exists.`)
+    }
+    const id = `store_${slug.replace(/-/g, '_')}`
+    const store = await this.prisma.store.create({
+      data: {
+        id,
+        name: input.name,
+        slug,
+        currency: input.currency || 'USD',
+        domain: input.domain || null,
+        status: 'active',
+      },
+    })
+
+    // Provision default primary warehouse location
+    try {
+      await this.prisma.location.create({
+        data: {
+          id: `loc_${slug}_warehouse`,
+          name: `${input.name} Main Warehouse`,
+          address1: '100 Distribution Way',
+          city: 'Portland',
+          province: 'OR',
+          country: 'United States',
+          zip: '97201',
+          active: true,
+        },
+      })
+    } catch {
+      // ignore if duplicate
+    }
+
+    return { store, userErrors: [] }
+  }
 
   async domainSetPrimary(rawHost: string) {
     const host = rawHost.trim().toLowerCase()
@@ -1538,6 +1593,18 @@ export class StoreContentResolver {
   @Mutation()
   resetDemoData() {
     return this.service.resetDemoData()
+  }
+  @Query()
+  stores() {
+    return this.service.stores()
+  }
+  @Mutation()
+  async storeCreate(@Args('input') input: { name: string; slug: string; currency?: string; domain?: string }) {
+    try {
+      return await this.service.storeCreate(input)
+    } catch (e) {
+      return { store: null, userErrors: [{ field: ['slug'], message: (e as Error).message }] }
+    }
   }
 }
 

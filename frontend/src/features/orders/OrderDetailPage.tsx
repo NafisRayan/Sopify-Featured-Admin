@@ -95,8 +95,9 @@ export default function OrderDetailPage() {
   const [tagDraft, setTagDraft] = useState<string[]>([])
   // fulfill form
   const [fulItemIds, setFulItemIds] = useState<Set<string>>(new Set())
+  const [fulQuantities, setFulQuantities] = useState<Record<string, number>>({})
   const [fulLocation, setFulLocation] = useState(locations[0]?.id ?? '')
-  const [fulCarrier, setFulCarrier] = useState('')
+  const [fulCarrier, setFulCarrier] = useState('USPS')
   const [fulTracking, setFulTracking] = useState('')
   const [fulNotify, setFulNotify] = useState(true)
   // refund form
@@ -146,9 +147,15 @@ export default function OrderDetailPage() {
   }
 
   const openFulfill = () => {
-    setFulItemIds(new Set(unfulfilledItems.map((li) => li.id)))
+    const initialIds = new Set(unfulfilledItems.map((li) => li.id))
+    const initialQtys: Record<string, number> = {}
+    unfulfilledItems.forEach((li) => {
+      initialQtys[li.id] = li.quantity
+    })
+    setFulItemIds(initialIds)
+    setFulQuantities(initialQtys)
     setFulTracking('')
-    setFulCarrier('')
+    setFulCarrier('USPS')
     setFulfillOpen(true)
   }
 
@@ -162,9 +169,12 @@ export default function OrderDetailPage() {
   const doFulfill = async () => {
     if (fulItemIds.size === 0) return
     try {
+      const lineItemIds = [...fulItemIds]
+      const quantities = lineItemIds.map((id) => fulQuantities[id] || 1)
       await fulfillOrder({
         orderId: order.id,
-        lineItemIds: [...fulItemIds],
+        lineItemIds,
+        quantities,
         locationId: fulLocation,
         trackingNumber: fulTracking || undefined,
         carrier: fulCarrier || undefined,
@@ -434,30 +444,57 @@ export default function OrderDetailPage() {
           {/* Fulfillments — tracking lifecycle: cancel + tracking events */}
           {order.fulfillments.length > 0 && (
             <DividedCard>
-              <CardHeader title={`Fulfillments (${order.fulfillments.length})`} subtitle="Tracking numbers and delivery events" />
+              <CardHeader
+                title={`Fulfillments (${order.fulfillments.length})`}
+                subtitle="Package shipments, carrier tracking and delivery events"
+              />
               <ul className="divide-y divide-border">
-                {order.fulfillments.map((f) => {
+                {order.fulfillments.map((f, pkgIdx) => {
                   const canceled = f.status === 'canceled'
                   const itemTitles = f.lineItemIds
-                    .map((id) => order.lineItems.find((li) => li.id === id)?.title)
+                    .map((id) => {
+                      const li = order.lineItems.find((x) => x.id === id)
+                      const qty = (f as any).quantities?.[id] || li?.quantity || 1
+                      return li ? `${qty}× ${li.title}` : null
+                    })
                     .filter((t): t is string => Boolean(t))
                   const formOpen = eventFormFor === f.id
-                  return (
-                    <li key={f.id} className="px-4 py-3 text-[13px]">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-medium">
-                          {itemTitles.length} item{itemTitles.length === 1 ? '' : 's'}
-                          {itemTitles.length > 0 && <span className="font-normal text-text-muted"> · {itemTitles.slice(0, 3).join(', ')}{itemTitles.length > 3 ? '…' : ''}</span>}
-                        </span>
-                        <Badge tone={canceled ? 'critical' : 'success'} dot>
-                          {canceled ? 'Canceled' : 'Fulfilled'}
-                        </Badge>
-                      </div>
-                      <p className="mt-0.5 text-xs text-text-muted">
-                        {formatDateTime(f.createdAt)} · from {allLocations.find((l) => l.id === f.locationId)?.name ?? 'Unknown location'}
-                        {f.trackingNumber && ` · ${f.carrier ?? 'Tracking'} ${f.trackingNumber}`}
-                      </p>
+                  const trackingUrl = (f as any).trackingUrl || (f.trackingNumber ? `https://tools.usps.com/go/TrackConfirmAction?tLabels=${f.trackingNumber}` : null)
 
+                  return (
+                    <li key={f.id} className="px-4 py-3.5 text-[13px] bg-white">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-text">
+                            Package #{order.name.replace('#', '')}-F{pkgIdx + 1}
+                          </span>
+                          <Badge tone={canceled ? 'critical' : 'success'} dot>
+                            {canceled ? 'Canceled' : 'Fulfilled'}
+                          </Badge>
+                        </div>
+                        {trackingUrl && (
+                          <a
+                            href={trackingUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-semibold text-accent hover:underline flex items-center gap-1"
+                          >
+                            Track on {f.carrier || 'Carrier'} ↗
+                          </a>
+                        )}
+                      </div>
+                      <p className="text-xs text-text-muted">
+                        {formatDateTime(f.createdAt)} · Ship-from:{' '}
+                        <span className="font-medium text-text">
+                          {allLocations.find((l) => l.id === f.locationId)?.name ?? 'Warehouse'}
+                        </span>
+                        {f.trackingNumber && (
+                          <> · Tracking: <span className="font-mono text-text">{f.carrier ?? ''} {f.trackingNumber}</span></>
+                        )}
+                      </p>
+                      <div className="mt-2 text-xs font-medium text-text-muted">
+                        Items in package: <span className="text-text font-normal">{itemTitles.join(', ')}</span>
+                      </div>
                       {(f.events ?? []).length > 0 && (
                         <ol className="mt-2 space-y-1 border-l-2 border-border pl-3 text-xs text-text-muted">
                           {(f.events ?? []).map((ev) => (
@@ -840,7 +877,7 @@ export default function OrderDetailPage() {
             <p className="mb-1.5 text-xs font-semibold text-text">Items</p>
             <ul className="divide-y divide-border rounded-lg border border-border">
               {unfulfilledItems.map((li) => (
-                <li key={li.id} className="flex items-center gap-3 px-3 py-2">
+                <li key={li.id} className="flex items-center gap-3 px-3 py-2.5">
                   <input
                     type="checkbox"
                     className="h-4 w-4 accent-[#303030]"
@@ -854,9 +891,24 @@ export default function OrderDetailPage() {
                     aria-label={`Fulfill ${li.title}`}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px]">{li.title} {li.variantTitle && `· ${li.variantTitle}`}</span>
-                    <span className="block text-xs text-text-muted">Qty {li.quantity}</span>
+                    <span className="block truncate text-[13px] font-medium">{li.title} {li.variantTitle && `· ${li.variantTitle}`}</span>
+                    <span className="block text-xs text-text-muted">Total in order: {li.quantity}</span>
                   </span>
+                  {fulItemIds.has(li.id) && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-xs text-text-muted">Fulfill qty:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max={li.quantity}
+                        value={fulQuantities[li.id] ?? li.quantity}
+                        onChange={(e) =>
+                          setFulQuantities({ ...fulQuantities, [li.id]: Math.min(li.quantity, Math.max(1, Number(e.target.value))) })
+                        }
+                        className="w-16 rounded border border-border px-2 py-1 text-xs text-right font-semibold"
+                      />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

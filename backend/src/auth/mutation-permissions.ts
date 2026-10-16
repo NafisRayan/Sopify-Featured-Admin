@@ -43,6 +43,7 @@ export const MUTATION_PERMISSIONS: Record<string, PermissionSpec> = {
   orderClose: { resource: 'orders', action: 'edit' },
   orderReopen: { resource: 'orders', action: 'edit' },
   orderFulfill: { resource: 'orders', action: 'edit' },
+  fulfillmentCreateV2: { resource: 'orders', action: 'edit' },
   orderRefund: { resource: 'orders', action: 'refund' },
   orderEdit: { resource: 'orders', action: 'edit' },
   draftOrderCreate: { resource: 'orders', action: 'edit' },
@@ -151,4 +152,8 @@ export const MUTATION_PERMISSIONS: Record<string, PermissionSpec> = {
   savedSearchCreate: { resource: 'settings', action: 'edit' },
   savedSearchUpdate: { resource: 'settings', action: 'edit' },
   savedSearchDelete: { resource: 'settings', action: 'edit' },
+  storeCreate: { resource: 'settings', action: 'edit' },
+  productReviewUpdateStatus: { resource: 'products', action: 'edit' },
+  productReviewReply: { resource: 'products', action: 'edit' },
+  productReviewDelete: { resource: 'products', action: 'edit' },
 }

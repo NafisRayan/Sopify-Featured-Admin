@@ -6,12 +6,14 @@ import { Logger, ValidationPipe } from '@nestjs/common'
 import { AppModule } from './app.module'
 import { AuthMiddleware } from './auth/auth.middleware'
 import { SessionService } from './auth/session.service'
+import { TenantMiddleware } from './common/tenant.middleware'
+import { PrismaService } from './prisma/prisma.service'
 import { assertAuthConfig } from './auth/auth.config'
 import { AllExceptionsFilter } from './common/all-exceptions.filter'
 
 async function bootstrap(): Promise<void> {
   assertAuthConfig()
-  const app = await NestFactory.create<NestExpressApplication>(AppModule)
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true })
   const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5199')
     .split(',')
     .map((s) => s.trim())
@@ -27,8 +29,11 @@ async function bootstrap(): Promise<void> {
     },
     credentials: true,
   })
+  // Run AuthMiddleware first so req.staff / staffContext ALS is populated for Tenant ACL validation
   const authMiddleware = new AuthMiddleware(app.get(SessionService))
   app.use((req: express.Request, res: express.Response, next: express.NextFunction) => authMiddleware.use(req, res, next))
+  const tenantMiddleware = new TenantMiddleware(app.get(PrismaService))
+  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => tenantMiddleware.use(req, res, next))
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }))
   app.useGlobalFilters(new AllExceptionsFilter(app.get(HttpAdapterHost)))
   app.enableShutdownHooks()

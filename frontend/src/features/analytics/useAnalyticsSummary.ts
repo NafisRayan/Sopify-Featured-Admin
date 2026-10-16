@@ -9,15 +9,23 @@ export interface AnalyticsSummaryData {
   to: string
   grossSales: number
   discounts: number
+  returns?: number
   refunds: number
   netSales: number
   shipping: number
   taxes: number
+  totalSales?: number
   giftCardSales: number
   ordersCount: number
+  unitsSold?: number
   avgOrderValue: number
+  averageOrderValue?: number
   returningCustomerRate: number
-  topProducts: { productId: string; title: string; units: number; revenue: number }[]
+  salesDelta?: number
+  ordersDelta?: number
+  series?: Array<{ date: string; sales: number; orders: number }>
+  topProducts: Array<{ productId: string; title: string; imageSrc?: string; units: number; revenue: number; sales?: number }>
+  salesByChannel?: Array<{ channel: string; sales: number; orders: number; percentage: number }>
 }
 
 export interface AnalyticsPair {
@@ -81,11 +89,11 @@ export function serverCoreMetrics(pair: AnalyticsPair, localUnitsSold: number): 
     netSales: c.netSales,
     netSalesDelta: delta(c.netSales, p?.netSales ?? 0),
     ordersCount: c.ordersCount,
-    unitsSold: localUnitsSold,
+    unitsSold: c.unitsSold ?? localUnitsSold,
     aov,
-    returningRate,
-    salesDelta: delta(totalSales, prevTotal),
-    ordersDelta: delta(c.ordersCount, p?.ordersCount ?? 0),
+    returningRate: returningRate,
+    salesDelta: c.salesDelta !== undefined ? c.salesDelta : delta(totalSales, prevTotal),
+    ordersDelta: c.ordersDelta !== undefined ? c.ordersDelta : delta(c.ordersCount, p?.ordersCount ?? 0),
     aovDelta: delta(aov, prevAov),
     returningDelta: returningRate - prevReturningRate,
   }

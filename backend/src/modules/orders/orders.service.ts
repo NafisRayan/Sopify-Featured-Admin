@@ -4,6 +4,8 @@ import { b2bPricing } from '../customers/customers.module'
 import { Discount as DiscountRow, GiftCard as GiftCardRow } from '@prisma/client'
 import { mapOrder, mapReturn, mapOrderRisk, mapCustomer } from '../../common/mappers'
 import { uid, roundMoney } from '../../common/ids'
+import { generateCarrierTrackingUrl } from '../../common/carrier'
+import { currentTenant } from '../../common/tenant.middleware'
 import { parseJson, toJson, toConnection, filterByQuery } from '../../common/helpers'
 import { actorId, actorName } from '../../auth/actor'
 
@@ -115,9 +117,35 @@ export class OrdersService {
   }
 
   async analytics(from: Date, to: Date): Promise<any> {
+    const tenant = currentTenant()
+    const fromDate = new Date(from)
+    const toDate = new Date(to)
+
+    // Primary date window query
     const rows = await this.prisma.order.findMany({
-    where: { createdAt: { gte: from, lte: to }, isDraft: false, status: { not: 'cancelled' } },
+      where: {
+        storeId: tenant.id,
+        createdAt: { gte: fromDate, lte: toDate },
+        isDraft: false,
+        status: { not: 'cancelled' },
+      },
+      orderBy: { createdAt: 'asc' },
     })
+
+    // Prior comparison window query
+    const durationMs = Math.max(1000 * 60 * 60 * 24, toDate.getTime() - fromDate.getTime())
+    const priorFrom = new Date(fromDate.getTime() - durationMs)
+    const priorTo = new Date(fromDate.getTime())
+
+    const priorRows = await this.prisma.order.findMany({
+      where: {
+        storeId: tenant.id,
+        createdAt: { gte: priorFrom, lte: priorTo },
+        isDraft: false,
+        status: { not: 'cancelled' },
+      },
+    })
+
     const ordersCount = rows.length
     let grossSales = 0
     let discounts = 0
@@ -125,46 +153,133 @@ export class OrdersService {
     let shipping = 0
     let taxes = 0
     let giftCardSales = 0
-    const productAgg = new Map<string, { productId: string; title: string; units: number; revenue: number }>()
+    let unitsSold = 0
+
+    const daySeriesMap = new Map<string, { sales: number; orders: number }>()
+    const channelAggMap = new Map<string, { sales: number; orders: number }>()
+    const productAgg = new Map<string, { productId: string; title: string; imageSrc?: string; units: number; revenue: number }>()
+
     for (const o of rows) {
       const discount = parseJson<{ amount?: number } | null>(o.discountCode as string, null)?.amount ?? 0
       const refundList = parseJson<{ amount: number }[]>(o.refunds as string, [])
       const gift = parseJson<{ amount?: number } | null>(o.giftCard as string, null)?.amount ?? 0
+      const refundSum = refundList.reduce((s, r) => s + r.amount, 0)
+
       grossSales += o.subtotal
       discounts += discount
-      refunds += refundList.reduce((s, r) => s + r.amount, 0)
+      refunds += refundSum
       shipping += o.shippingPrice
       taxes += o.taxTotal
       giftCardSales += gift
-      for (const li of parseJson<{ productId: string; title?: string; quantity: number; price: number }[]>(o.lineItems as string, [])) {
-        const agg = productAgg.get(li.productId) ?? { productId: li.productId, title: li.title ?? '', units: 0, revenue: 0 }
+
+      const orderNet = roundMoney(o.subtotal - discount - refundSum)
+
+      // Group by date (YYYY-MM-DD)
+      const dateKey = o.createdAt.toISOString().slice(0, 10)
+      const currentDay = daySeriesMap.get(dateKey) ?? { sales: 0, orders: 0 }
+      currentDay.sales += o.total
+      currentDay.orders += 1
+      daySeriesMap.set(dateKey, currentDay)
+
+      // Group by channel
+      const channelName = o.channel || 'Online Store'
+      const currentChan = channelAggMap.get(channelName) ?? { sales: 0, orders: 0 }
+      currentChan.sales += o.total
+      currentChan.orders += 1
+      channelAggMap.set(channelName, currentChan)
+
+      for (const li of parseJson<{ productId: string; title?: string; imageSrc?: string; quantity: number; price: number }[]>(o.lineItems as string, [])) {
+        unitsSold += li.quantity
+        const agg = productAgg.get(li.productId) ?? {
+          productId: li.productId,
+          title: li.title ?? '',
+          imageSrc: li.imageSrc,
+          units: 0,
+          revenue: 0,
+        }
         agg.units += li.quantity
         agg.revenue += li.price * li.quantity
         productAgg.set(li.productId, agg)
       }
     }
-    const allOrders = await this.prisma.order.findMany({ where: { isDraft: false }, select: { customerId: true } })
-    const orderCounts = new Map<string, number>()
-    for (const o of allOrders) orderCounts.set(o.customerId, (orderCounts.get(o.customerId) ?? 0) + 1)
-    const returning = rows.filter((o) => (orderCounts.get(o.customerId) ?? 0) > 1).length
+
+    // Returning Customer Rate
+    const allOrders = await this.prisma.order.findMany({
+      where: { storeId: tenant.id, isDraft: false },
+      select: { customerId: true, email: true },
+    })
+    const customerOrderCounts = new Map<string, number>()
+    for (const o of allOrders) {
+      const key = o.customerId || o.email.toLowerCase()
+      customerOrderCounts.set(key, (customerOrderCounts.get(key) ?? 0) + 1)
+    }
+    const distinctOrderingCustomers = new Set(rows.map((o) => o.customerId || o.email.toLowerCase()))
+    const repeatCustomersCount = [...distinctOrderingCustomers].filter(
+      (key) => (customerOrderCounts.get(key) ?? 0) > 1,
+    ).length
+    const returningCustomerRate =
+      distinctOrderingCustomers.size > 0
+        ? roundMoney((repeatCustomersCount / distinctOrderingCustomers.size) * 100)
+        : 0
+
     const netSales = roundMoney(grossSales - discounts - refunds)
+    const totalSales = roundMoney(netSales + shipping + taxes)
+    const aov = ordersCount > 0 ? roundMoney(totalSales / ordersCount) : 0
+
+    // Prior period calculations for deltas
+    let priorTotalSales = 0
+    for (const po of priorRows) {
+      priorTotalSales += po.total
+    }
+    const salesDelta =
+      priorTotalSales === 0
+        ? totalSales > 0 ? 100 : 0
+        : roundMoney(((totalSales - priorTotalSales) / priorTotalSales) * 100)
+    const ordersDelta =
+      priorRows.length === 0
+        ? ordersCount > 0 ? 100 : 0
+        : roundMoney(((ordersCount - priorRows.length) / priorRows.length) * 100)
+
+    // Time series
+    const series = [...daySeriesMap.entries()].map(([date, val]) => ({
+      date,
+      sales: roundMoney(val.sales),
+      orders: val.orders,
+    }))
+
+    // Sales by Channel
+    const salesByChannel = [...channelAggMap.entries()].map(([channel, data]) => ({
+      channel,
+      sales: roundMoney(data.sales),
+      orders: data.orders,
+      percentage: totalSales > 0 ? roundMoney((data.sales / totalSales) * 100) : 0,
+    }))
+
     return {
-      from,
-      to,
+      from: fromDate,
+      to: toDate,
       grossSales: roundMoney(grossSales),
       discounts: roundMoney(discounts),
+      returns: roundMoney(refunds),
       refunds: roundMoney(refunds),
       netSales,
       shipping: roundMoney(shipping),
       taxes: roundMoney(taxes),
+      totalSales,
       giftCardSales: roundMoney(giftCardSales),
       ordersCount,
-      avgOrderValue: ordersCount > 0 ? roundMoney(netSales / ordersCount) : 0,
-      returningCustomerRate: ordersCount > 0 ? Math.round((returning / ordersCount) * 1000) / 10 : 0,
+      unitsSold,
+      avgOrderValue: aov,
+      averageOrderValue: aov,
+      returningCustomerRate,
+      salesDelta,
+      ordersDelta,
+      series,
       topProducts: [...productAgg.values()]
-        .map((p) => ({ ...p, revenue: roundMoney(p.revenue) }))
+        .map((p) => ({ ...p, revenue: roundMoney(p.revenue), sales: roundMoney(p.revenue) }))
         .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 5),
+        .slice(0, 10),
+      salesByChannel,
     }
   }
 
@@ -562,33 +677,89 @@ export class OrdersService {
       throw new Error('At least one line item is required to fulfill')
     }
     const lineItems = parseJson<{ id: string; variantId: string; quantity: number }[]>(order.lineItems as string, [])
-    const fulfillments = parseJson<{ id: string; createdAt: string; lineItemIds: string[]; trackingNumber?: string; carrier?: string; locationId: string; status: string; events?: { id: string; status: string; message?: string; occurredAt: string }[]; restockMap?: Record<string, 'committed' | 'available' | 'none'> }[]>(order.fulfillments as string, [])
-    const alreadyFulfilled = new Set(fulfillments.flatMap((f) => f.lineItemIds))
-    for (const lid of input.lineItemIds) {
-      if (alreadyFulfilled.has(lid)) throw new Error(`Line item ${lid} is already fulfilled`)
-    }
-    for (const li of lineItems) {
-      if (!input.lineItemIds.includes(li.id)) continue
-      await this.assertCanFulfill(li.variantId, li.quantity, input.locationId)
-    }
-    const restockMap: Record<string, 'committed' | 'available' | 'none'> = {}
-    for (const li of lineItems) {
-      if (!input.lineItemIds.includes(li.id)) continue
-      restockMap[li.id] = await this.consumeForFulfill(li.variantId, li.quantity, input.locationId, `Fulfilled order ${order.name}`)
+    const fulfillments = parseJson<{
+      id: string
+      createdAt: string
+      lineItemIds: string[]
+      quantities?: Record<string, number>
+      trackingNumber?: string
+      carrier?: string
+      trackingUrl?: string
+      locationId: string
+      status: string
+      events?: any[]
+      restockMap?: Record<string, 'committed' | 'available' | 'none'>
+    }[]>(order.fulfillments as string, [])
+
+    // Compute already fulfilled quantities per line item
+    const alreadyFulfilledQty: Record<string, number> = {}
+    for (const f of fulfillments) {
+      for (const lid of f.lineItemIds) {
+        alreadyFulfilledQty[lid] = (alreadyFulfilledQty[lid] || 0) + (f.quantities?.[lid] ?? 1)
+      }
     }
 
-    fulfillments.push({
+    const quantitiesMap: Record<string, number> = {}
+    for (let idx = 0; idx < input.lineItemIds.length; idx++) {
+      const lid = input.lineItemIds[idx]
+      const li = lineItems.find((x) => x.id === lid)
+      if (!li) continue
+      const requestedQty = Array.isArray(input.quantities) && input.quantities[idx] != null ? input.quantities[idx] : undefined
+      // Explicit 0 means "skip this line item" — only default to remaining when not provided
+      const reqQty = requestedQty != null ? requestedQty : li.quantity - (alreadyFulfilledQty[lid] || 0)
+      if (reqQty <= 0) continue
+      if ((alreadyFulfilledQty[lid] || 0) + reqQty > li.quantity) {
+        throw new Error(`Cannot fulfill ${reqQty} units of line item ${lid}; only ${li.quantity - (alreadyFulfilledQty[lid] || 0)} unfulfilled`)
+      }
+      quantitiesMap[lid] = reqQty
+      await this.assertCanFulfill(li.variantId, reqQty, input.locationId)
+    }
+
+    const validLineIds = Object.keys(quantitiesMap)
+    if (validLineIds.length === 0) {
+      throw new Error('All selected line items are already completely fulfilled')
+    }
+
+    const restockMap: Record<string, 'committed' | 'available' | 'none'> = {}
+    for (const lid of validLineIds) {
+      const li = lineItems.find((x) => x.id === lid)!
+      const qtyToFulfill = quantitiesMap[lid]
+      restockMap[lid] = await this.consumeForFulfill(li.variantId, qtyToFulfill, input.locationId, `Fulfilled order ${order.name}`)
+    }
+
+    const trackingUrl = generateCarrierTrackingUrl(input.carrier, input.trackingNumber)
+
+    const newFulfillment = {
       id: uid('ff'),
       createdAt: new Date().toISOString(),
-      lineItemIds: input.lineItemIds,
+      lineItemIds: validLineIds,
+      quantities: quantitiesMap,
       trackingNumber: input.trackingNumber || undefined,
       carrier: input.carrier || undefined,
+      trackingUrl: trackingUrl || undefined,
       locationId: input.locationId,
       status: 'success',
       events: [],
       restockMap,
-    })
-    const newFulfillmentStatus = this.recomputeFulfillmentStatus({ lineItems: lineItems as never, fulfillments: fulfillments as never })
+    }
+    fulfillments.push(newFulfillment)
+
+    // Compute whether order is fully or partially fulfilled
+    let allFulfilled = true
+    let anyFulfilled = false
+    for (const li of lineItems) {
+      const totalFulfilledForLine = fulfillments
+        .filter((f) => f.lineItemIds.includes(li.id))
+        .reduce((sum, f) => sum + (f.quantities?.[li.id] ?? 1), 0)
+      if (totalFulfilledForLine < li.quantity) {
+        allFulfilled = false
+      }
+      if (totalFulfilledForLine > 0) {
+        anyFulfilled = true
+      }
+    }
+
+    const newFulfillmentStatus = allFulfilled ? 'fulfilled' : anyFulfilled ? 'partial' : 'unfulfilled'
     const data: Record<string, unknown> = { fulfillments: toJson(fulfillments), fulfillmentStatus: newFulfillmentStatus }
     if (newFulfillmentStatus === 'fulfilled') {
       data.status = 'closed'
@@ -596,15 +767,57 @@ export class OrdersService {
     }
     await this.prisma.order.update({ where: { id: order.id }, data })
     const location = await this.prisma.location.findUnique({ where: { id: input.locationId } })
-    const qty = lineItems.filter((li) => input.lineItemIds.includes(li.id)).reduce((s, li) => s + li.quantity, 0)
+    const totalUnits = Object.values(quantitiesMap).reduce((s, q) => s + q, 0)
     const tracking = input.trackingNumber ? ` · Tracking ${input.carrier ?? ''} ${input.trackingNumber}` : ''
     await this.addTimeline(
       order.id,
       'fulfillment',
-      `${qty} item(s) fulfilled from ${location?.name ?? 'default location'}${tracking}${input.notifyCustomer ? ' · Customer notified' : ''}`,
+      `${totalUnits} item(s) fulfilled from ${location?.name ?? 'default location'}${tracking}${input.notifyCustomer ? ' · Customer notified' : ''}`,
     )
     await this.logActivity('Fulfilled order', 'order', order.id)
-    return this.order(order.id)
+    return { order: await this.order(order.id), fulfillment: newFulfillment }
+  }
+
+  async fulfillmentCreateV2(input: {
+    orderId: string
+    lineItemsByFulfillmentOrder?: Array<{ id: string; quantity: number }>
+    locationId: string
+    trackingInfo?: { company?: string; number?: string; url?: string }
+    notifyCustomer?: boolean
+  }): Promise<any> {
+    const lineItemIds = input.lineItemsByFulfillmentOrder?.map((li) => li.id) || []
+    const quantities = input.lineItemsByFulfillmentOrder?.map((li) => li.quantity) || []
+    const { order, fulfillment } = await this.fulfill({
+      orderId: input.orderId,
+      lineItemIds,
+      quantities,
+      locationId: input.locationId,
+      carrier: input.trackingInfo?.company,
+      trackingNumber: input.trackingInfo?.number,
+      notifyCustomer: input.notifyCustomer,
+    })
+
+    return {
+      fulfillment: {
+        id: fulfillment.id,
+        status: 'SUCCESS',
+        createdAt: fulfillment.createdAt,
+        trackingInfo: fulfillment.trackingNumber
+          ? [{ company: fulfillment.carrier, number: fulfillment.trackingNumber, url: fulfillment.trackingUrl }]
+          : [],
+        fulfillmentLineItems: {
+          edges: lineItemIds
+            .map((lid, idx) => ({
+              cursor: lid,
+              node: { id: lid, quantity: quantities[idx] != null ? quantities[idx] : 1 },
+            }))
+            .filter((e) => e.node.quantity > 0),
+          pageInfo: { hasNextPage: false, hasPreviousPage: false },
+        },
+      },
+      order,
+      userErrors: [],
+    }
   }
 
   private static readonly fulfillmentEventStatuses: Record<string, true> = {
@@ -1315,7 +1528,10 @@ export class OrdersService {
     }
 
     if (rawCode && rawCode !== 'CUSTOM') {
-      const disc = await this.prisma.discount.findUnique({ where: { code: rawCode.toUpperCase() } })
+      const tenant = currentTenant()
+      const disc = await this.prisma.discount.findFirst({
+        where: { storeId: tenant.id, code: rawCode.toUpperCase() },
+      })
       if (!disc || disc.status !== 'active') throw new Error(`Discount code ${rawCode} is invalid or inactive`)
       usableWindow(disc)
       this.assertDiscountEligible(disc, customer, lineItems as { productId: string }[])
@@ -1484,7 +1700,9 @@ export class OrdersService {
     // to guarantee the no-partial-commit invariant.
     const discountRef = parseJson<{ code?: string } | null>(draft.discountCode as string, null)
     if (discountRef?.code && discountRef.code !== 'CUSTOM') {
-      const disc = await this.prisma.discount.findUnique({ where: { code: discountRef.code } })
+      const disc = await this.prisma.discount.findFirst({
+        where: { storeId: draft.storeId, code: discountRef.code },
+      })
       if (disc && disc.usageLimit !== null && disc.usedCount >= disc.usageLimit) {
         throw new Error(`Discount code ${disc.code} has reached its usage limit`)
       }
@@ -1515,9 +1733,11 @@ export class OrdersService {
     }
 
     if (discountRef?.code && discountRef.code !== 'CUSTOM') {
-      const disc = await this.prisma.discount.findUnique({ where: { code: discountRef.code } })
+      const disc = await this.prisma.discount.findFirst({
+        where: { storeId: draft.storeId, code: discountRef.code },
+      })
       if (disc) {
-        await this.prisma.discount.update({ where: { code: disc.code }, data: { usedCount: { increment: 1 } } })
+        await this.prisma.discount.update({ where: { id: disc.id }, data: { usedCount: { increment: 1 } } })
       }
     }
 

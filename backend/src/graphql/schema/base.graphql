@@ -202,6 +202,48 @@ type TagsPayload {
   userErrors: [UserError!]!
 }
 
+
+# ─── Product Reviews (Social Proof) ──────────────────────────────────────────
+
+type ProductReview implements Node {
+  id: ID!
+  storeId: String!
+  productId: ID!
+  productTitle: String
+  productImage: String
+  customerId: ID
+  customerName: String!
+  customerEmail: String!
+  rating: Int!
+  title: String!
+  body: String!
+  status: String!
+  isVerifiedBuyer: Boolean!
+  adminReply: String
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type ProductReviewEdge {
+  cursor: String!
+  node: ProductReview!
+}
+
+type ProductReviewConnection {
+  edges: [ProductReviewEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type AdminProductReviewPayload {
+  review: ProductReview
+  userErrors: [UserError!]!
+}
+
+type ProductReviewDeletePayload {
+  deletedId: ID
+  userErrors: [UserError!]!
+}
 # ─── Collections ────────────────────────────────────────────────────────────
 
 type CollectionRule {

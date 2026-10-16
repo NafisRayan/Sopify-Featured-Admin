@@ -1,9 +1,13 @@
 import { Resolver, Query, Mutation, Args } from '@nestjs/graphql'
 import { ProductsService } from './products.service'
+import { ReviewsService } from './reviews.service'
 
 @Resolver('Product')
 export class ProductsResolver {
-  constructor(private readonly service: ProductsService) {}
+  constructor(
+    private readonly service: ProductsService,
+    private readonly reviewsService: ReviewsService,
+  ) {}
 
   @Query()
   product(@Args('id') id: string) {
@@ -200,6 +204,46 @@ export class ProductsResolver {
       return { collection: await this.service.duplicateCollection(id), userErrors: [] }
     } catch (e) {
       return { collection: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
+
+  // ─── Product Reviews (Social Proof) ────────────────────────────────────────
+
+  @Query()
+  productReviews(
+    @Args('status', { nullable: true }) status?: string,
+    @Args('rating', { nullable: true }) rating?: number,
+    @Args('query', { nullable: true }) query?: string,
+    @Args('first', { nullable: true }) first?: number,
+    @Args('after', { nullable: true }) after?: string,
+  ) {
+    return this.reviewsService.listReviews({ status, rating, query, first, after })
+  }
+
+  @Mutation()
+  async productReviewUpdateStatus(@Args('id') id: string, @Args('status') status: string) {
+    try {
+      return await this.reviewsService.updateReviewStatus(id, status)
+    } catch (e) {
+      return { review: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async productReviewReply(@Args('id') id: string, @Args('reply') reply: string) {
+    try {
+      return await this.reviewsService.replyToReview(id, reply)
+    } catch (e) {
+      return { review: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async productReviewDelete(@Args('id') id: string) {
+    try {
+      return await this.reviewsService.deleteReview(id)
+    } catch (e) {
+      return { deletedId: null, userErrors: [{ field: ['id'], message: (e as Error).message }] }
     }
   }
 }

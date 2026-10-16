@@ -105,7 +105,8 @@ export class CustomersService {
   }
 
   async create(input: Record<string, any>) {
-    if (await this.prisma.customer.findUnique({ where: { email: input.email } })) {
+    const email = input.email?.trim().toLowerCase()
+    if (await this.prisma.customer.findFirst({ where: { email } })) {
       throw new Error('A customer with this email already exists')
     }
     const address = input.defaultAddress?.address1

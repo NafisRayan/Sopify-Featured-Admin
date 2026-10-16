@@ -1,14 +1,16 @@
-import { useState } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import {
   House, Package, Tag, Users, FileText, Megaphone, TicketPercent, ChartNoAxesCombined,
-  Globe, LayoutGrid, Settings, ChevronDown, ChevronRight, Store, BriefcaseBusiness,
+  Globe, LayoutGrid, Settings, ChevronDown, ChevronRight, Store, BriefcaseBusiness, Check, Plus,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { useUiStore } from '@/store/uiStore'
 import { initials } from '@/lib/format'
 import { Popover } from '@/components/ui'
 import { cn } from '@/lib/cn'
+import { gqlRequest, getActiveStoreId, setActiveStoreId } from '@/services/api'
+import { StoreCreateModal } from '@/features/settings/StoreCreateModal'
 
 interface NavChild {
   label: string
@@ -25,7 +27,6 @@ interface NavEntry {
 
 export function Sidebar() {
   const location = useLocation()
-  const navigate = useNavigate()
   const settings = useStore((s) => s.settings)
   const openOrders = useStore((s) =>
     s.orders.filter((o) => !o.isDraft && o.status === 'open').length,
@@ -34,6 +35,34 @@ export function Sidebar() {
   const mobileOpen = useUiStore((s) => s.mobileNavOpen)
   const setMobileOpen = useUiStore((s) => s.setMobileNavOpen)
 
+  const [activeStoreId, setActiveId] = useState(() => getActiveStoreId())
+  const [stores, setStores] = useState<Array<{ id: string; name: string; slug: string; currency: string }>>([
+    { id: 'store_northstar', name: 'Northstar Goods', slug: 'northstar', currency: 'USD' },
+  ])
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+
+  useEffect(() => {
+    gqlRequest<{ stores: Array<{ id: string; name: string; slug: string; currency: string }> }>(`
+      query GetStores {
+        stores {
+          id
+          name
+          slug
+          currency
+        }
+      }
+    `)
+      .then((res) => {
+        if (res?.stores?.length) {
+          setStores(res.stores)
+        }
+      })
+      .catch(() => {
+        // ignore if offline
+      })
+  }, [createModalOpen])
+
+  const currentStore = stores.find((s) => s.id === activeStoreId) || stores[0]
   // auto-expand the group that contains the active route
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
     Orders: true,
@@ -54,6 +83,7 @@ export function Sidebar() {
       label: 'Products', to: '/products', icon: Tag,
       children: [
         { label: 'All products', to: '/products' },
+        { label: 'Reviews', to: '/reviews' },
         { label: 'Collections', to: '/collections' },
         { label: 'Inventory', to: '/inventory' },
         { label: 'Transfers', to: '/inventory/transfers' },
@@ -114,6 +144,7 @@ export function Sidebar() {
         )}
       >
         {/* Store switcher */}
+        {/* Store switcher */}
         <div className="p-2">
           <Popover
             align="left"
@@ -124,8 +155,12 @@ export function Sidebar() {
                   <Store size={16} className="text-text-on-dark" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-semibold text-white">{settings.storeName}</span>
-                  <span className="block text-[11px] text-text-on-dark-muted">Demo store</span>
+                  <span className="block truncate text-[13px] font-semibold text-white">
+                    {currentStore?.name || settings.storeName}
+                  </span>
+                  <span className="block text-[11px] text-text-on-dark-muted font-mono truncate">
+                    {currentStore?.slug || 'northstar'}.platform.com
+                  </span>
                 </span>
                 <ChevronDown size={14} className="text-text-on-dark-muted" />
               </button>
@@ -133,25 +168,48 @@ export function Sidebar() {
           >
             {(close) => (
               <div>
-                <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-text-subdued">Stores</p>
+                <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-text-subdued">
+                  Merchant Stores
+                </p>
+                <div className="space-y-1 max-h-56 overflow-y-auto pr-0.5">
+                  {stores.map((s) => {
+                    const isActive = s.id === currentStore.id
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition ${
+                          isActive ? 'bg-surface-hover font-semibold' : 'hover:bg-surface-hover'
+                        }`}
+                        onClick={() => {
+                          setActiveStoreId(s.id)
+                          setActiveId(s.id)
+                          close()
+                          window.location.reload()
+                        }}
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded bg-[#f1f1f1] text-neutral-800 shrink-0">
+                          <Store size={14} />
+                        </span>
+                        <div className="min-w-0 flex-1 truncate">
+                          <span className="block truncate text-[13px] text-text">{s.name}</span>
+                          <span className="block text-[11px] text-text-muted truncate">{s.slug}.platform.com</span>
+                        </div>
+                        {isActive && <Check size={14} className="text-success shrink-0" />}
+                      </button>
+                    )
+                  })}
+                </div>
+
                 <button
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-surface-hover"
-                  onClick={close}
-                >
-                  <span className="flex h-7 w-7 items-center justify-center rounded bg-[#f1f1f1]">
-                    <Store size={14} />
-                  </span>
-                  <span className="flex-1 text-[13px] font-medium">{settings.storeName}</span>
-                  <span className="text-xs text-success">● Active</span>
-                </button>
-                <button
-                  className="mt-2 w-full rounded-lg border border-[#d0d0d0] px-2 py-1.5 text-[13px] hover:bg-surface-hover"
+                  type="button"
+                  className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg border border-[#d0d0d0] px-2 py-2 text-[12px] font-semibold text-text hover:bg-surface-hover transition"
                   onClick={() => {
                     close()
-                    navigate('/settings/general')
+                    setCreateModalOpen(true)
                   }}
                 >
-                  Add store (demo)
+                  <Plus size={13} /> Create new store
                 </button>
               </div>
             )}
@@ -258,6 +316,16 @@ export function Sidebar() {
           </div>
         </div>
       </nav>
+      <StoreCreateModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onCreated={(newStore) => {
+          setStores((prev) => [...prev, { ...newStore, currency: 'USD' }])
+          setActiveStoreId(newStore.id)
+          setActiveId(newStore.id)
+          window.location.reload()
+        }}
+      />
     </>
   )
 }

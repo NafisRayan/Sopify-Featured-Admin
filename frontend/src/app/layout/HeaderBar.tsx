@@ -112,7 +112,7 @@ function AccountMenu() {
         },
         { label: 'Simulate permissions as…', disabled: true, separatorBefore: true },
         ...simulateItems,
-        { label: 'View online store', separatorBefore: true, onClick: () => toast('The storefront is not part of this admin demo', { tone: 'info' }) },
+        { label: 'View online store ↗', separatorBefore: true, onClick: () => window.open('/store', '_blank') },
         {
           label: 'Log out',
           destructive: true,

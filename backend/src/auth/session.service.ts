@@ -8,6 +8,7 @@ export interface StaffSession {
   name: string
   email: string
   role: string
+  storeId?: string
 }
 
 export const SESSION_COOKIE = 'ns_staff_session'
@@ -72,6 +73,16 @@ export class SessionService {
     if (!parsed) return null
     const member = await this.prisma.staffMember.findUnique({ where: { id: parsed.staffId } })
     if (!member || member.status !== 'active') return null
-    return { id: member.id, name: member.name, email: member.email, role: member.role }
+    let storeId: string | undefined
+    if (member && typeof member === 'object' && 'storeId' in member && typeof member.storeId === 'string') {
+      storeId = member.storeId
+    }
+    return {
+      id: member.id,
+      name: member.name,
+      email: member.email,
+      role: member.role,
+      storeId,
+    }
   }
 }

@@ -103,8 +103,9 @@ type Query {
   blogPostsCount: Int!
   redirectsCount: Int!
   locationsCount: Int!
+  stores: [Store!]!
+  productReviews(status: String, rating: Int, query: String, first: Int = 50, after: String): ProductReviewConnection!
 }
-
 type AdminSnapshot {
   products: [Product!]!
   customers: [Customer!]!
@@ -207,6 +208,7 @@ type Mutation {
   orderClose(id: ID!): OrderPayload!
   orderReopen(id: ID!): OrderPayload!
   orderFulfill(input: OrderFulfillInput!): OrderPayload!
+  fulfillmentCreateV2(fulfillment: FulfillmentV2Input!): FulfillmentCreateV2Payload!
   orderRefund(input: OrderRefundInput!): OrderPayload!
   orderEdit(id: ID!, added: [OrderLineItemInput!]!, removed: [OrderLineItemInput!]!): OrderEditPayload!
   fulfillmentCancel(fulfillmentId: ID!): OrderPayload!
@@ -329,4 +331,8 @@ type Mutation {
   savedSearchUpdate(id: ID!, search: SavedSearchInput!): SavedSearchPayload!
   savedSearchDelete(id: ID!): OrdersPayload!
   resetDemoData: StoreSettings!
+  storeCreate(input: StoreCreateInput!): StoreCreatePayload!
+  productReviewUpdateStatus(id: ID!, status: String!): AdminProductReviewPayload!
+  productReviewReply(id: ID!, reply: String!): AdminProductReviewPayload!
+  productReviewDelete(id: ID!): ProductReviewDeletePayload!
 }

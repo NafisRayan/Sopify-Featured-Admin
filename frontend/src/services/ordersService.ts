@@ -72,6 +72,7 @@ export function recomputePaymentStatus(order: Order): PaymentStatus {
 export interface FulfillInput {
   orderId: string
   lineItemIds: string[]
+  quantities?: number[]
   locationId: string
   trackingNumber?: string
   carrier?: string
@@ -679,13 +680,15 @@ export async function deleteDrafts(ids: string[]): Promise<void> {
 
 // ─── Abandoned checkouts ───────────────────────────────────────────────────
 
-export async function sendRecoveryEmail(checkoutId: string): Promise<void> {
+export async function sendRecoveryEmail(checkoutId: string): Promise<string> {
   await delay(350)
   const store = getStore()
   const co = store.abandoned.find((a) => a.id === checkoutId)
   if (!co) throw new Error('Checkout not found')
   store.patchAbandoned(checkoutId, { recoveryStatus: 'email_sent' })
   syncMutation(`mutation { abandonedCheckoutRecoverySend(id: ${gqlLiteral(checkoutId)}) { userErrors { message } } }`)
+  const recoveryLink = `/store/checkout?recover=${encodeURIComponent(checkoutId)}&discount=COMEBACK`
+  return recoveryLink
 }
 
 export async function createOrderFromAbandoned(checkoutId: string): Promise<string | undefined> {

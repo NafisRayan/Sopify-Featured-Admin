@@ -282,6 +282,27 @@ type Plan {
   trialDaysLeft: Int!
   storeId: String!
 }
+type Store {
+  id: ID!
+  name: String!
+  slug: String!
+  domain: String
+  currency: String!
+  status: String!
+  createdAt: DateTime!
+}
+
+input StoreCreateInput {
+  name: String!
+  slug: String!
+  currency: String
+  domain: String
+}
+
+type StoreCreatePayload {
+  store: Store
+  userErrors: [UserError!]!
+}
 
 type Shop {
   id: ID!

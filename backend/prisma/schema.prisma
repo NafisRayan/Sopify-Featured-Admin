@@ -15,10 +15,25 @@ datasource db {
   schemas  = ["northstar"]
 }
 
-// ─── Products & collections ────────────────────────────────────────────────
+// ─── Multi-Tenant Store Core ────────────────────────────────────────────────
 
+model Store {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique // URL handle e.g. "acme-goods"
+  domain    String?  @unique
+  currency  String   @default("USD")
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@schema("northstar")
+}
+
+// ─── Products & collections ────────────────────────────────────────────────
 model Product {
   id               String   @id
+  storeId          String   @default("store_northstar")
   title            String
   descriptionHtml  String   @default("")
   vendor           String   @default("")
@@ -38,11 +53,13 @@ model Product {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @default(now())
 
+  @@index([storeId])
   @@schema("northstar")
 }
 
 model Collection {
   id              String    @id
+  storeId         String    @default("store_northstar")
   title           String
   descriptionHtml String    @default("")
   imageSrc        String?
@@ -57,6 +74,7 @@ model Collection {
   publishedAt     DateTime?
   createdAt       DateTime  @default(now())
 
+  @@index([storeId])
   @@schema("northstar")
 }
 
@@ -64,9 +82,10 @@ model Collection {
 
 model Customer {
   id                    String   @id
+  storeId               String   @default("store_northstar")
   firstName             String
   lastName              String
-  email                 String   @unique
+  email                 String
   phone                 String?
   defaultAddress        Json?
   addresses             Json
@@ -77,6 +96,8 @@ model Customer {
   smsMarketingConsent    String?
   createdAt             DateTime @default(now())
 
+  @@unique([storeId, email])
+  @@index([storeId])
   @@schema("northstar")
 }
 
@@ -109,6 +130,7 @@ model Segment {
 
 model Order {
   id                String    @id
+  storeId           String    @default("store_northstar")
   name              String
   customerId        String
   email             String
@@ -141,11 +163,13 @@ model Order {
 
   @@index([status])
   @@index([customerId])
+  @@index([storeId])
   @@schema("northstar")
 }
 
 model AbandonedCheckout {
   id             String   @id
+  storeId        String   @default("store_northstar")
   customerId     String
   email          String
   createdAt      DateTime @default(now())
@@ -153,6 +177,7 @@ model AbandonedCheckout {
   total          Float
   recoveryStatus String   @default("not_recovered")
 
+  @@index([storeId])
   @@schema("northstar")
 }
 
@@ -210,12 +235,14 @@ model Location {
 model InventoryLevel {
   variantId   String
   locationId  String
+  storeId     String @default("store_northstar")
   available   Int
   committed   Int    @default(0)
   unavailable Int    @default(0)
 
   @@id([variantId, locationId])
   @@index([variantId])
+  @@index([storeId])
   @@schema("northstar")
 }
 
@@ -248,10 +275,10 @@ model Transfer {
 }
 
 // ─── Discounts & marketing ─────────────────────────────────────────────────
-
 model Discount {
   id                  String    @id
-  code                String    @unique
+  storeId             String    @default("store_northstar")
+  code                String
   title               String
   type                String
   method              String    @default("code")
@@ -268,6 +295,8 @@ model Discount {
   status              String    @default("active")
   combinations        Json
 
+  @@unique([storeId, code])
+  @@index([storeId])
   @@schema("northstar")
 }
 
@@ -510,9 +539,12 @@ model StoreSettings {
 }
 
 model Theme {
-  id    String @id @default("singleton")
-  value Json
+  id      String @id @default(cuid())
+  storeId String @default("store_northstar")
+  value   Json
 
+  @@unique([storeId, id])
+  @@index([storeId])
   @@schema("northstar")
 }
 
@@ -597,5 +629,38 @@ model SavedSearch {
   createdAt    DateTime @default(now())
 
   @@index([resourceType])
+  @@schema("northstar")
+}
+
+model ProductReview {
+  id              String   @id @default(cuid())
+  storeId         String   @default("store_northstar")
+  productId       String
+  customerId      String?
+  customerName    String
+  customerEmail   String
+  rating          Int      // 1 to 5
+  title           String
+  body            String
+  status          String   @default("published") // published | pending | hidden
+  isVerifiedBuyer Boolean  @default(false)
+  adminReply      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([storeId])
+  @@index([productId])
+  @@index([status])
+  @@schema("northstar")
+}
+
+model WebhookEvent {
+  id        String   @id @default(cuid())
+  eventId   String   @unique
+  type      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([type])
   @@schema("northstar")
 }

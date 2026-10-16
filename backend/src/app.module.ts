@@ -14,10 +14,13 @@ import { StoreContentModule } from './modules/store-content/store-content.module
 import { AuthModule } from './auth/auth.module'
 import { graphqlDevToolsEnabled } from './auth/auth.config'
 import { UploadsModule } from './modules/uploads/uploads.module'
-
+import { StorefrontModule } from './modules/storefront/storefront.module'
+import { PaymentsModule } from './modules/payments/payments.module'
+import { HealthController } from './modules/system/health.controller'
 const graphQLDevTools = graphqlDevToolsEnabled()
 
 @Module({
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     AuthModule,
@@ -39,6 +42,8 @@ const graphQLDevTools = graphqlDevToolsEnabled()
     FinancesModule,
     StoreContentModule,
     UploadsModule,
+    StorefrontModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}

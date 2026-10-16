@@ -23,16 +23,41 @@ type TimelineEvent {
   author: String!
 }
 
+type FulfillmentTrackingInfo {
+  company: String
+  number: String
+  url: String
+}
+
+type FulfillmentLineItem {
+  id: ID!
+  quantity: Int!
+  lineItem: OrderLineItem
+}
+
+type FulfillmentLineItemEdge {
+  cursor: String!
+  node: FulfillmentLineItem!
+}
+
+type FulfillmentLineItemConnection {
+  edges: [FulfillmentLineItemEdge!]!
+  pageInfo: PageInfo!
+}
+
 type Fulfillment {
   id: ID!
   createdAt: DateTime!
   lineItemIds: [ID!]!
   trackingNumber: String
   carrier: String
+  trackingUrl: String
   locationId: ID!
   status: String!
   events: [FulfillmentEvent!]!
   restockMap: JSON
+  trackingInfo: [FulfillmentTrackingInfo!]!
+  fulfillmentLineItems(first: Int = 20): FulfillmentLineItemConnection!
 }
 
 type FulfillmentEvent {
@@ -149,10 +174,36 @@ type OrdersPayload {
 input OrderFulfillInput {
   orderId: ID!
   lineItemIds: [ID!]!
+  quantities: [Int!]
   locationId: ID!
   trackingNumber: String
   carrier: String
   notifyCustomer: Boolean
+}
+
+input FulfillmentLineItemInput {
+  id: ID!
+  quantity: Int!
+}
+
+input FulfillmentTrackingInput {
+  company: String
+  number: String
+  url: String
+}
+
+input FulfillmentV2Input {
+  orderId: ID!
+  lineItemsByFulfillmentOrder: [FulfillmentLineItemInput!]
+  locationId: ID!
+  trackingInfo: FulfillmentTrackingInput
+  notifyCustomer: Boolean
+}
+
+type FulfillmentCreateV2Payload {
+  fulfillment: Fulfillment
+  order: Order
+  userErrors: [UserError!]!
 }
 
 input OrderRefundInput {
@@ -360,8 +411,23 @@ input InventoryMoveInput {
 type AnalyticsTopProduct {
   productId: ID!
   title: String!
+  imageSrc: String
   units: Int!
   revenue: Float!
+  sales: Float!
+}
+
+type AnalyticsDaySeries {
+  date: String!
+  sales: Float!
+  orders: Int!
+}
+
+type AnalyticsChannelMetric {
+  channel: String!
+  sales: Float!
+  orders: Int!
+  percentage: Float!
 }
 
 type AnalyticsSummary {
@@ -369,13 +435,21 @@ type AnalyticsSummary {
   to: DateTime!
   grossSales: Float!
   discounts: Float!
+  returns: Float!
   refunds: Float!
   netSales: Float!
   shipping: Float!
   taxes: Float!
+  totalSales: Float!
   giftCardSales: Float!
   ordersCount: Int!
+  unitsSold: Int!
   avgOrderValue: Float!
+  averageOrderValue: Float!
   returningCustomerRate: Float!
+  salesDelta: Float!
+  ordersDelta: Float!
+  series: [AnalyticsDaySeries!]!
   topProducts: [AnalyticsTopProduct!]!
+  salesByChannel: [AnalyticsChannelMetric!]!
 }

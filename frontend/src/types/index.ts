@@ -554,18 +554,39 @@ export interface AnalyticsTopProduct {
   revenue: number
 }
 
+export interface AnalyticsDaySeries {
+  date: string
+  sales: number
+  orders: number
+}
+
+export interface AnalyticsChannelMetric {
+  channel: string
+  sales: number
+  orders: number
+  percentage: number
+}
+
 export interface AnalyticsSummary {
   from: string
   to: string
   grossSales: number
   discounts: number
+  returns?: number
   refunds: number
   netSales: number
   shipping: number
   taxes: number
+  totalSales?: number
   giftCardSales: number
   ordersCount: number
+  unitsSold?: number
   avgOrderValue: number
+  averageOrderValue?: number
   returningCustomerRate: number
+  salesDelta?: number
+  ordersDelta?: number
+  series?: AnalyticsDaySeries[]
   topProducts: AnalyticsTopProduct[]
+  salesByChannel?: AnalyticsChannelMetric[]
 }

@@ -1,0 +1,562 @@
+# ─── Shopify Storefront GraphQL SDL (2024-10 / 2026-10) ───────────────────
+
+scalar DateTime
+scalar JSON
+
+type UserError {
+  field: [String!]
+  message: String!
+  code: String
+}
+
+interface Node {
+  id: ID!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type MoneyV2 {
+  amount: Float!
+  currencyCode: String!
+}
+
+type Image {
+  url: String!
+  altText: String
+  width: Int
+  height: Int
+}
+
+type Shop {
+  id: ID!
+  name: String!
+  description: String
+  primaryDomain: Domain!
+  moneyFormat: String!
+  paymentSettings: PaymentSettings!
+}
+
+type Domain {
+  host: String!
+  sslEnabled: Boolean!
+  url: String!
+}
+
+type PaymentSettings {
+  currencyCode: String!
+  acceptedCardBrands: [String!]!
+}
+
+# ─── Products & Collections ──────────────────────────────────────────────────
+
+type ProductOption {
+  id: ID!
+  name: String!
+  values: [String!]!
+}
+
+type SelectedOption {
+  name: String!
+  value: String!
+}
+
+type ProductVariant implements Node {
+  id: ID!
+  title: String!
+  availableForSale: Boolean!
+  currentlyNotInStock: Boolean!
+  quantityAvailable: Int
+  sku: String
+  barcode: String
+  price: MoneyV2!
+  compareAtPrice: MoneyV2
+  image: Image
+  selectedOptions: [SelectedOption!]!
+  product: Product!
+}
+
+type ProductVariantEdge {
+  cursor: String!
+  node: ProductVariant!
+}
+
+type ProductVariantConnection {
+  edges: [ProductVariantEdge!]!
+  pageInfo: PageInfo!
+}
+
+type Product implements Node {
+  id: ID!
+  handle: String!
+  title: String!
+  description: String!
+  descriptionHtml: String!
+  vendor: String!
+  productType: String!
+  availableForSale: Boolean!
+  totalInventory: Int
+  options: [ProductOption!]!
+  images: [Image!]!
+  featuredImage: Image
+  variants(first: Int = 50, after: String): ProductVariantConnection!
+  priceRange: ProductPriceRange!
+  compareAtPriceRange: ProductPriceRange!
+  reviews: [StorefrontReview!]!
+  reviewsCount: Int!
+  averageRating: Float!
+}
+
+type StorefrontReview {
+  id: ID!
+  customerName: String!
+  rating: Int!
+  title: String!
+  body: String!
+  isVerifiedBuyer: Boolean!
+  adminReply: String
+  createdAt: DateTime!
+}
+
+input ProductReviewInput {
+  productId: ID!
+  customerName: String!
+  customerEmail: String!
+  rating: Int!
+  title: String!
+  body: String!
+}
+
+type ProductReviewPayload {
+  review: StorefrontReview
+  userErrors: [UserError!]!
+}
+
+type ProductPriceRange {
+  minVariantPrice: MoneyV2!
+  maxVariantPrice: MoneyV2!
+}
+
+type ProductEdge {
+  cursor: String!
+  node: Product!
+}
+
+type ProductConnection {
+  edges: [ProductEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Collection implements Node {
+  id: ID!
+  handle: String!
+  title: String!
+  description: String!
+  descriptionHtml: String!
+  image: Image
+  products(first: Int = 20, after: String, sortKey: String, reverse: Boolean): ProductConnection!
+}
+
+type CollectionEdge {
+  cursor: String!
+  node: Collection!
+}
+
+type CollectionConnection {
+  edges: [CollectionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+# ─── Storefront Cart & Checkout ──────────────────────────────────────────────
+
+type CartDiscountAllocation {
+  discountedAmount: MoneyV2!
+  code: String
+  title: String
+}
+
+type CartCost {
+  totalAmount: MoneyV2!
+  subtotalAmount: MoneyV2!
+  totalTaxAmount: MoneyV2
+  totalDutyAmount: MoneyV2
+  totalDiscountAmount: MoneyV2
+}
+
+type CartLineCost {
+  totalAmount: MoneyV2!
+  subtotalAmount: MoneyV2!
+  amountPerQuantity: MoneyV2!
+  compareAtAmountPerQuantity: MoneyV2
+}
+
+type ComponentAttribute {
+  key: String!
+  value: String!
+}
+
+type CartLine implements Node {
+  id: ID!
+  quantity: Int!
+  cost: CartLineCost!
+  merchandise: ProductVariant!
+  attributes: [ComponentAttribute!]!
+  estimatedCost: CartLineCost!
+}
+
+type CartLineEdge {
+  cursor: String!
+  node: CartLine!
+}
+
+type CartLineConnection {
+  edges: [CartLineEdge!]!
+  pageInfo: PageInfo!
+}
+
+type CartBuyerIdentity {
+  email: String
+  phone: String
+  customer: Customer
+  countryCode: String
+}
+
+type CartDeliveryGroup {
+  id: ID!
+  deliveryOptions: [CartDeliveryOption!]!
+  selectedDeliveryOption: CartDeliveryOption
+}
+
+type CartDeliveryOption {
+  handle: String!
+  title: String!
+  estimatedCost: MoneyV2!
+}
+
+type CartDiscountCode {
+  code: String!
+  applicable: Boolean!
+  amount: MoneyV2
+}
+
+type Cart implements Node {
+  id: ID!
+  checkoutUrl: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  lines(first: Int = 100, after: String): CartLineConnection!
+  cost: CartCost!
+  buyerIdentity: CartBuyerIdentity!
+  totalQuantity: Int!
+  note: String
+  discountCodes: [CartDiscountCode!]!
+  discountAllocations: [CartDiscountAllocation!]!
+  deliveryGroups: [CartDeliveryGroup!]!
+}
+
+# ─── Customer / Order ────────────────────────────────────────────────────────
+
+type MailingAddress implements Node {
+  id: ID!
+  address1: String
+  address2: String
+  city: String
+  province: String
+  zip: String
+  country: String
+  firstName: String
+  lastName: String
+  phone: String
+  formatted: [String!]!
+}
+
+type MailingAddressEdge {
+  cursor: String!
+  node: MailingAddress!
+}
+
+type MailingAddressConnection {
+  edges: [MailingAddressEdge!]!
+  pageInfo: PageInfo!
+}
+
+type CustomerAccessToken {
+  accessToken: String!
+  expiresAt: DateTime!
+}
+
+type Customer implements Node {
+  id: ID!
+  email: String
+  firstName: String
+  lastName: String
+  displayName: String!
+  phone: String
+  defaultAddress: MailingAddress
+  addresses(first: Int = 20, after: String): MailingAddressConnection!
+  orders(first: Int = 20, after: String): OrderConnection!
+}
+
+type OrderLineItem {
+  id: ID!
+  title: String!
+  variantTitle: String
+  quantity: Int!
+  originalTotalPrice: MoneyV2!
+  variant: ProductVariant
+}
+
+type FulfillmentTrackingInfo {
+  number: String
+  url: String
+  company: String
+}
+
+type OrderFulfillment {
+  status: String!
+  trackingCompany: String
+  trackingInfo: [FulfillmentTrackingInfo!]!
+}
+
+type Order implements Node {
+  id: ID!
+  name: String!
+  orderNumber: Int!
+  processedAt: DateTime!
+  financialStatus: String!
+  fulfillmentStatus: String!
+  totalPrice: MoneyV2!
+  subtotalPrice: MoneyV2!
+  totalTax: MoneyV2!
+  totalShippingPrice: MoneyV2!
+  shippingAddress: MailingAddress
+  lineItems(first: Int = 50): [OrderLineItem!]!
+  fulfillments: [OrderFulfillment!]!
+  returns: [StorefrontReturn!]!
+}
+
+type StorefrontReturnLineItem {
+  id: ID!
+  quantity: Int!
+  lineItem: OrderLineItem
+}
+
+type StorefrontReturn {
+  id: ID!
+  status: String!
+  reason: String!
+  createdAt: DateTime!
+  refundAmount: MoneyV2
+  returnLineItems: [StorefrontReturnLineItem!]!
+}
+
+type OrderEdge {
+  cursor: String!
+  node: Order!
+}
+
+type OrderConnection {
+  edges: [OrderEdge!]!
+  pageInfo: PageInfo!
+}
+
+# ─── Inputs & Payloads ───────────────────────────────────────────────────────
+
+input CartLineInput {
+  merchandiseId: ID!
+  quantity: Int!
+  attributes: [AttributeInput!]
+}
+
+input CartLineUpdateInput {
+  id: ID!
+  quantity: Int
+  merchandiseId: ID
+  attributes: [AttributeInput!]
+}
+
+input AttributeInput {
+  key: String!
+  value: String!
+}
+
+input CartBuyerIdentityInput {
+  email: String
+  phone: String
+  countryCode: String
+}
+
+input CartInput {
+  lines: [CartLineInput!]
+  buyerIdentity: CartBuyerIdentityInput
+  discountCodes: [String!]
+  note: String
+}
+
+type CartCreatePayload {
+  cart: Cart
+  userErrors: [UserError!]!
+}
+
+type CartLinesAddPayload {
+  cart: Cart
+  userErrors: [UserError!]!
+}
+
+type CartLinesUpdatePayload {
+  cart: Cart
+  userErrors: [UserError!]!
+}
+
+type CartLinesRemovePayload {
+  cart: Cart
+  userErrors: [UserError!]!
+}
+
+type CartBuyerIdentityUpdatePayload {
+  cart: Cart
+  userErrors: [UserError!]!
+}
+
+type CartDiscountCodesUpdatePayload {
+  cart: Cart
+  userErrors: [UserError!]!
+}
+
+type CartNoteUpdatePayload {
+  cart: Cart
+  userErrors: [UserError!]!
+}
+
+# Storefront checkout transition: converts a Cart into a committed Order in backend
+input CartCheckoutCompleteInput {
+  cartId: ID!
+  email: String!
+  shippingAddress: JSON
+  billingAddress: JSON
+  paymentGateway: String
+}
+
+type CartCheckoutCompletePayload {
+  order: Order
+  userErrors: [UserError!]!
+}
+input CustomerCreateInput {
+  email: String!
+  password: String!
+  firstName: String
+  lastName: String
+  phone: String
+  acceptsMarketing: Boolean
+}
+
+type CustomerCreatePayload {
+  customer: Customer
+  customerUserErrors: [UserError!]!
+  userErrors: [UserError!]!
+}
+
+input CustomerAccessTokenCreateInput {
+  email: String!
+  password: String!
+}
+
+type CustomerAccessTokenCreatePayload {
+  customerAccessToken: CustomerAccessToken
+  customerUserErrors: [UserError!]!
+  userErrors: [UserError!]!
+}
+
+type CustomerAccessTokenDeletePayload {
+  deletedAccessToken: String
+  deletedCustomerAccessTokenId: String
+  userErrors: [UserError!]!
+}
+
+input MailingAddressInput {
+  address1: String
+  address2: String
+  city: String
+  province: String
+  zip: String
+  country: String
+  firstName: String
+  lastName: String
+  phone: String
+}
+
+type CustomerAddressCreatePayload {
+  customerAddress: MailingAddress
+  customerUserErrors: [UserError!]!
+  userErrors: [UserError!]!
+}
+
+type CustomerAddressUpdatePayload {
+  customerAddress: MailingAddress
+  customerUserErrors: [UserError!]!
+  userErrors: [UserError!]!
+}
+
+type CustomerAddressDeletePayload {
+  deletedCustomerAddressId: String
+  customerUserErrors: [UserError!]!
+  userErrors: [UserError!]!
+}
+
+type CustomerDefaultAddressUpdatePayload {
+  customer: Customer
+  customerUserErrors: [UserError!]!
+  userErrors: [UserError!]!
+}
+input ReturnLineItemInput {
+  lineItemId: ID!
+  quantity: Int!
+  reason: String
+  note: String
+}
+
+type ReturnRequestPayload {
+  return: StorefrontReturn
+  userErrors: [UserError!]!
+}
+
+# ─── Storefront Root Operations ──────────────────────────────────────────────
+
+type Query {
+  shop: Shop!
+  node(id: ID!): Node
+  nodes(ids: [ID!]!): [Node]!
+  product(id: ID, handle: String): Product
+  products(first: Int = 20, after: String, query: String, reverse: Boolean): ProductConnection!
+  collection(id: ID, handle: String): Collection
+  collections(first: Int = 20, after: String, query: String, reverse: Boolean): CollectionConnection!
+  cart(id: ID!): Cart
+  customer(customerAccessToken: String!): Customer
+  order(id: ID!): Order
+}
+
+type Mutation {
+  customerCreate(input: CustomerCreateInput!): CustomerCreatePayload!
+  customerAccessTokenCreate(input: CustomerAccessTokenCreateInput!): CustomerAccessTokenCreatePayload!
+  customerAccessTokenDelete(customerAccessToken: String!): CustomerAccessTokenDeletePayload!
+  customerAddressCreate(customerAccessToken: String!, address: MailingAddressInput!): CustomerAddressCreatePayload!
+  customerAddressUpdate(customerAccessToken: String!, id: ID!, address: MailingAddressInput!): CustomerAddressUpdatePayload!
+  customerAddressDelete(customerAccessToken: String!, id: ID!): CustomerAddressDeletePayload!
+  customerDefaultAddressUpdate(customerAccessToken: String!, addressId: ID!): CustomerDefaultAddressUpdatePayload!
+  cartCreate(input: CartInput): CartCreatePayload!
+  cartLinesAdd(cartId: ID!, lines: [CartLineInput!]!): CartLinesAddPayload!
+  cartLinesUpdate(cartId: ID!, lines: [CartLineUpdateInput!]!): CartLinesUpdatePayload!
+  cartLinesRemove(cartId: ID!, lineIds: [ID!]!): CartLinesRemovePayload!
+  cartBuyerIdentityUpdate(cartId: ID!, buyerIdentity: CartBuyerIdentityInput!): CartBuyerIdentityUpdatePayload!
+  cartDiscountCodesUpdate(cartId: ID!, discountCodes: [String!]): CartDiscountCodesUpdatePayload!
+  cartNoteUpdate(cartId: ID!, note: String): CartNoteUpdatePayload!
+  cartCheckoutComplete(input: CartCheckoutCompleteInput!): CartCheckoutCompletePayload!
+  returnRequest(orderId: ID!, returnLineItems: [ReturnLineItemInput!]!): ReturnRequestPayload!
+  productReviewCreate(input: ProductReviewInput!): ProductReviewPayload!
+}

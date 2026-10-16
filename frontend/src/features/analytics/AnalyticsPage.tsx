@@ -4,6 +4,8 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
+import { Download } from 'lucide-react'
+import { Button } from '@/components/ui'
 import { useStore } from '@/store/useStore'
 import {
   coreMetrics, dailySeries, seriesWithComparison, topProducts, channelBreakdown,
@@ -157,15 +159,89 @@ export default function AnalyticsPage() {
   )
   const totalChannelSales = channels.reduce((s, c) => s + c.sales, 0)
 
+  const handleExportCsv = () => {
+    const fromStr = range.start.toISOString().slice(0, 10)
+    const toStr = range.end.toISOString().slice(0, 10)
+
+    // Compute authoritative daily financial aggregations from actual orders in range
+    const dayAggregates: Record<
+      string,
+      { orders: number; gross: number; discounts: number; returns: number; net: number; shipping: number; tax: number; total: number }
+    > = {}
+
+    for (const o of rangeOrders) {
+      const dateKey = o.createdAt.slice(0, 10)
+      if (!dayAggregates[dateKey]) {
+        dayAggregates[dateKey] = { orders: 0, gross: 0, discounts: 0, returns: 0, net: 0, shipping: 0, tax: 0, total: 0 }
+      }
+      const agg = dayAggregates[dateKey]
+      const discountVal = o.discountCode?.amount ?? 0
+      const refundVal = o.refunds?.reduce((sum, r) => sum + r.amount, 0) ?? 0
+
+      agg.orders += 1
+      agg.gross += o.subtotal
+      agg.discounts += discountVal
+      agg.returns += refundVal
+      agg.net += o.subtotal - discountVal - refundVal
+      agg.shipping += o.shippingPrice || 0
+      agg.tax += o.taxTotal || 0
+      agg.total += o.total
+    }
+
+    const headers = ['Date', 'Orders', 'Gross Sales', 'Discounts', 'Returns', 'Net Sales', 'Shipping', 'Taxes', 'Total Sales']
+    const csvLines = [headers.join(',')]
+
+    const sortedDays = Object.keys(dayAggregates).sort()
+    if (sortedDays.length === 0) {
+      // Include empty single row for date range if zero orders exist
+      csvLines.push([fromStr, 0, '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00'].join(','))
+    } else {
+      for (const day of sortedDays) {
+        const d = dayAggregates[day]
+        csvLines.push(
+          [
+            day,
+            d.orders,
+            d.gross.toFixed(2),
+            d.discounts.toFixed(2),
+            d.returns.toFixed(2),
+            d.net.toFixed(2),
+            d.shipping.toFixed(2),
+            d.tax.toFixed(2),
+            d.total.toFixed(2),
+          ].join(','),
+        )
+      }
+    }
+
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', `financial-report-${fromStr}-to-${toStr}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   return (
     <div>
       <PageHeader
         title="Analytics"
         subtitle={`${range.label} · ${formatNumber(metrics.ordersCount)} orders · ${formatMoney(metrics.totalSales)} total sales`}
-        primaryAction={<DateRangePicker range={range} />}
+        primaryAction={
+          <div className="flex items-center gap-2">
+            <Button
+              icon={<Download size={13} />}
+              onClick={handleExportCsv}
+            >
+              Export Financial Report
+            </Button>
+            <DateRangePicker range={range} />
+          </div>
+        }
         secondaryActions={<Toggle label="Compare to previous period" checked={compare} onChange={setCompare} />}
       />
-
       <div className="mb-4 flex flex-wrap gap-1">
         {sections.map((s) => (
           <button

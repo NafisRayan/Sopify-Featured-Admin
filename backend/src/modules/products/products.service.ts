@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service'
 import { parseJson, toJson, toConnection, filterByQuery, encodeCursor } from '../../common/helpers'
 import { mapProduct, productTotalInventory, mapCollection } from '../../common/mappers'
 import { uid, slugify, roundMoney } from '../../common/ids'
+import { currentTenant } from '../../common/tenant.middleware'
 
 function matchesRules(
   product: { tags: string[]; title: string; productType: string; vendor: string },
@@ -111,7 +112,11 @@ export class ProductsService {
   }
 
   async products(args: any): Promise<any> {
-    let rows = (await this.prisma.product.findMany({ orderBy: { updatedAt: 'desc' } })) as unknown as Record<string, unknown>[]
+    const tenant = currentTenant()
+    let rows = (await this.prisma.product.findMany({
+      where: { storeId: tenant.id },
+      orderBy: { updatedAt: 'desc' },
+    })) as unknown as Record<string, unknown>[]
     if (args.status) rows = rows.filter((r) => r.status === args.status)
     rows = filterByQuery(rows, args.query, (r) => [
       r.title as string, r.vendor as string, r.productType as string,
@@ -124,7 +129,8 @@ export class ProductsService {
   }
 
   async productsCount(query?: string): Promise<number> {
-    let rows = (await this.prisma.product.findMany()) as unknown as Record<string, unknown>[]
+    const tenant = currentTenant()
+    let rows = (await this.prisma.product.findMany({ where: { storeId: tenant.id } })) as unknown as Record<string, unknown>[]
     rows = filterByQuery(rows, query, (r) => [
       r.title as string, r.vendor as string, r.productType as string,
       parseJson<string[]>(r.tags as string, []).join(' '),
@@ -158,9 +164,11 @@ export class ProductsService {
 
     await this.assertUniqueSkus(variantsList)
 
+    const tenant = currentTenant()
     const row = await this.prisma.product.create({
       data: {
         id,
+        storeId: tenant.id,
         title,
         descriptionHtml: input.descriptionHtml ?? '<p></p>',
         vendor: input.vendor ?? 'Northstar Goods',

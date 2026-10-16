@@ -87,6 +87,7 @@ export async function reseed(prisma: PrismaClient, dataDir?: string): Promise<Re
   // its full duration (~80s over Neon), hence the explicit long timeout.
   await prisma.$transaction(
     async (trx) => {
+      await (trx as any).store?.deleteMany()
       await trx.savedSearch.deleteMany()
       await trx.priceListEntry.deleteMany()
       await trx.priceList.deleteMany()
@@ -130,6 +131,16 @@ export async function reseed(prisma: PrismaClient, dataDir?: string): Promise<Re
       await trx.shopCounter.deleteMany()
       await trx.theme.deleteMany()
       await trx.plan.deleteMany()
+      // Multi-tenant root store
+      await (trx as any).store?.create({
+        data: {
+          id: 'store_northstar',
+          name: 'Northstar Goods',
+          slug: 'northstar',
+          currency: 'USD',
+          status: 'active',
+        },
+      })
 
   // Loosely typed batch writer: row payloads come from trusted demo JSON.
   const tx = trx as unknown as {

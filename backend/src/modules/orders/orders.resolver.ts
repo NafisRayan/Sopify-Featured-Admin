@@ -96,9 +96,19 @@ export class OrdersResolver {
   @Mutation()
   async orderFulfill(@Args('input') input: Record<string, any>) {
     try {
-      return { order: await this.service.fulfill(input), userErrors: [] }
+      const res = await this.service.fulfill(input)
+      return { order: res.order, userErrors: [] }
     } catch (e) {
       return { order: null, userErrors: [{ field: ['input'], message: (e as Error).message }] }
+    }
+  }
+
+  @Mutation()
+  async fulfillmentCreateV2(@Args('fulfillment') fulfillment: any) {
+    try {
+      return await this.service.fulfillmentCreateV2(fulfillment)
+    } catch (e) {
+      return { fulfillment: null, order: null, userErrors: [{ field: ['fulfillment'], message: (e as Error).message }] }
     }
   }
 

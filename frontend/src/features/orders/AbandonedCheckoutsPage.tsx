@@ -99,7 +99,11 @@ export default function AbandonedCheckoutsPage() {
                 <Button
                   size="sm"
                   icon={<Mail size={12} />}
-                  onClick={() => void sendRecoveryEmail(c.id).then(() => toast('Recovery email sent'))}
+                  onClick={() =>
+                    void sendRecoveryEmail(c.id).then((link) => {
+                      toast(`Recovery email sent with link: ${link}`, { tone: 'info' })
+                    })
+                  }
                 >
                   Send recovery email
                 </Button>

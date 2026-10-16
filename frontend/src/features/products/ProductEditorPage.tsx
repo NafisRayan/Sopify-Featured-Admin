@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Archive, ArrowDown, ArrowUp, Bold, Copy, Eye, Italic, Link2, Plus,
-  Star, Trash2, TriangleAlert, ImageIcon, Upload,
+  Star, Trash2, TriangleAlert, ImageIcon, Upload, Sparkles,
 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import {
@@ -12,6 +12,7 @@ import {
 import { formatMoney, formatWeight } from '@/lib/format'
 import { slugify } from '@/lib/validation'
 import { variantAvailable } from '@/store/selectors'
+import { generateCartesianVariants, generateBulkSkus } from '@/lib/variantMatrix'
 import {
   addMedia, createProduct, deleteProducts, getProduct, removeMedia, reorderMedia,
   setFeaturedMedia, updateProduct, updateVariants, duplicateProduct,
@@ -118,18 +119,35 @@ function OptionEditor({
 
 function VariantRow({
   variant,
+  media = [],
   onChange,
   onOpenInventory,
 }: {
   variant: ProductVariant
+  media?: Product['media']
   onChange: (patch: Partial<ProductVariant>) => void
   onOpenInventory: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const [imagePickerOpen, setImagePickerOpen] = useState(false)
+  const currentMedia = media.find((m) => m.id === variant.imageId) || media[0]
+
   return (
     <>
       <tr>
-        <td className="px-3 py-2">
+        <td className="px-3 py-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setImagePickerOpen(true)}
+            className="w-8 h-8 rounded-md border border-border overflow-hidden bg-neutral-100 flex items-center justify-center shrink-0 hover:border-accent transition"
+            title="Assign variant photo"
+          >
+            {currentMedia ? (
+              <img src={currentMedia.src} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <ImageIcon size={14} className="text-neutral-400" />
+            )}
+          </button>
           <button className="flex items-center gap-2 text-left" onClick={() => setOpen(true)} title="Edit variant">
             {variant.title || <span className="text-text-muted">Default Title</span>}
           </button>
@@ -185,6 +203,37 @@ function VariantRow({
           </Button>
         </div>
       </Drawer>
+      {/* Per-variant image picker modal */}
+      <Modal
+        open={imagePickerOpen}
+        onClose={() => setImagePickerOpen(false)}
+        title={`Select image for ${variant.title}`}
+        size="sm"
+        footer={
+          <Button onClick={() => setImagePickerOpen(false)}>Done</Button>
+        }
+      >
+        <div className="grid grid-cols-3 gap-3 p-1">
+          {media.map((m) => {
+            const isSelected = variant.imageId === m.id
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  onChange({ imageId: m.id })
+                  setImagePickerOpen(false)
+                }}
+                className={`aspect-square rounded-xl overflow-hidden border-2 transition ${
+                  isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-text-muted'
+                }`}
+              >
+                <img src={m.src} alt="" className="w-full h-full object-cover" />
+              </button>
+            )
+          })}
+        </div>
+      </Modal>
     </>
   )
 }
@@ -724,38 +773,42 @@ export default function ProductEditorPage({ createMode = false }: { createMode?:
               <OptionEditor
                 options={draft.options}
                 onChange={(options) => {
-                  // apply immediately to the draft; regenerate combos preserving data
-                  const active = options.filter((o) => o.values.length > 0)
-                  if (active.length === 0) {
-                    patch({ options: [] })
-                    return
-                  }
-                  let combos: Record<string, string>[] = [{}]
-                  for (const opt of active) {
-                    combos = combos.flatMap((c) => opt.values.map((v) => ({ ...c, [opt.name]: v })))
-                  }
-                  const existing = new Map(draft.variants.map((v) => [Object.values(v.optionValues).join(' / '), v]))
-                  const variants = combos.map((ov, i) => {
-                    const key = Object.values(ov).join(' / ')
-                    const prior = existing.get(key)
-                    return {
-                      id: prior?.id ?? `${draft.id}_v${i + 1}`,
+                  const active = options.filter((o) => o.name.trim() && o.values.length > 0)
+                  const basePrice = draft.variants[0]?.price ?? 0
+                  const nextVariants = generateCartesianVariants(active, draft.variants, basePrice)
+                  patch({
+                    options: active,
+                    variants: nextVariants.map((v, i) => ({
+                      ...v,
+                      id: v.id || `${draft.id}_v${i + 1}`,
                       productId: draft.id,
-                      title: key,
-                      sku: prior?.sku ?? '',
-                      barcode: prior?.barcode,
-                      price: prior?.price ?? draft.variants[0]?.price ?? 0,
-                      compareAtPrice: prior?.compareAtPrice,
-                      costPerItem: prior?.costPerItem,
-                      optionValues: ov,
-                      weightGrams: prior?.weightGrams ?? draft.weightGrams,
-                      imageId: prior?.imageId,
-                      available: prior?.available ?? true,
-                    }
+                      sku: v.sku || '',
+                      optionValues: v.optionValues,
+                      available: v.available ?? true,
+                    })),
                   })
-                  patch({ options: active, variants })
                 }}
               />
+              {draft.variants.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between pb-1">
+                    <span className="text-xs font-semibold text-text-muted">
+                      {draft.variants.length} variant{draft.variants.length === 1 ? '' : 's'} generated
+                    </span>
+                    <Button
+                      size="sm"
+                      icon={<Sparkles size={12} />}
+                      onClick={() => {
+                        const withSkus = generateBulkSkus(draft.variants, draft.title || draft.id)
+                        patch({ variants: withSkus as any })
+                        toast('Deterministic SKUs generated across all variants')
+                      }}
+                    >
+                      Generate SKUs
+                    </Button>
+                  </div>
+                </div>
+              )}
               {draft.variants.length > 0 && (
                 <div className="mt-4 overflow-x-auto scroll-thin">
                   <table className="w-full text-[13px]">
@@ -773,6 +826,7 @@ export default function ProductEditorPage({ createMode = false }: { createMode?:
                         <VariantRow
                           key={v.id}
                           variant={v}
+                          media={draft.media}
                           onChange={(vp) => patchVariant(v.id, vp)}
                           onOpenInventory={() => setVariantInvDrawer(v)}
                         />

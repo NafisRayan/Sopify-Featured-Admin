@@ -1,0 +1,15 @@
+{
+  "name": "northstar-commerce-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production Multi-Tenant Shopify Platform (Admin Backoffice + Headless Storefront)",
+  "scripts": {
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:restart": "docker compose down && docker compose up --build -d",
+    "check": "npm run check --prefix backend && npm run typecheck --prefix frontend",
+    "test": "npm test --prefix backend && npm test --prefix frontend",
+    "test:ci": "npm run test:ci --prefix backend && npm test --prefix frontend"
+  }
+}

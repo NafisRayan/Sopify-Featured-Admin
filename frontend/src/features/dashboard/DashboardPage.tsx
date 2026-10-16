@@ -106,12 +106,28 @@ export default function DashboardPage() {
     [orders],
   )
   const lowStock = useMemo(() => lowStockVariants(8).slice(0, 6), [orders, products])
-  const chartData = series.map((p) => ({
-    ...p,
-    label: new Date(p.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-  }))
-  const channelTotal = channels.reduce((s, c) => s + c.sales, 0)
+  // Server series / channels if available, fallback to local
+  const chartData = useMemo(() => {
+    if (summaryPair?.current.series && summaryPair.current.series.length > 0) {
+      return summaryPair.current.series.map((p) => ({
+        ...p,
+        label: new Date(p.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      }))
+    }
+    return series.map((p) => ({
+      ...p,
+      label: new Date(p.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    }))
+  }, [summaryPair, series])
 
+  const activeChannels = useMemo(() => {
+    if (summaryPair?.current.salesByChannel && summaryPair.current.salesByChannel.length > 0) {
+      return summaryPair.current.salesByChannel
+    }
+    return channels
+  }, [summaryPair, channels])
+
+  const channelTotal = activeChannels.reduce((s, c) => s + c.sales, 0)
   // simulated baseline — no session tracking in this admin; label reflects that
   const conversion = 2.4
 

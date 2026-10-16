@@ -1,0 +1,66 @@
+services:
+  # ─── PostgreSQL Database ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: northstar-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-northstar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-northstar_secret_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-northstar_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-northstar} -d ${POSTGRES_DB:-northstar_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+    networks:
+      - northstar-net
+
+  # ─── NestJS Commerce Backend ────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: northstar-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-northstar}:${POSTGRES_PASSWORD:-northstar_secret_2026}@postgres:5432/${POSTGRES_DB:-northstar_db}?schema=northstar
+      SESSION_SECRET: ${SESSION_SECRET:-northstar_production_session_secret_32_chars_min}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_test_mock_secret}
+      CORS_ORIGINS: "http://localhost,http://localhost:80,http://localhost:3000,http://localhost:5173"
+    ports:
+      - "4000:4000"
+    networks:
+      - northstar-net
+
+  # ─── NGINX SPA Frontend & Reverse Proxy ─────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: northstar-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - northstar-net
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  northstar-net:
+    driver: bridge

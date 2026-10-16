@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Copy, Droplet, Globe, Menu as MenuIcon, MoreVertical, Paintbrush,
   Pencil, Rocket, Trash2, Type,
@@ -18,6 +18,7 @@ export default function OnlineStorePage() {
   const theme = useStore((s) => s.theme)
   const themeLibrary = useStore((s) => s.themeLibrary)
   const menus = useStore((s) => s.menus)
+  const navigate = useNavigate()
   const { toast } = useToast()
   const { confirm, confirmElement } = useConfirm()
   const [customizerOpen, setCustomizerOpen] = useState(false)
@@ -26,13 +27,13 @@ export default function OnlineStorePage() {
   const [renameValue, setRenameValue] = useState('')
   const canEdit = useCan('products', 'edit')
 
-  const openCustomizer = () => {
-    setDraft(structuredClone(theme))
-    setCustomizerOpen(true)
-  }
-
   const current = themeLibrary.find((t) => t.role === 'current')
   const others = themeLibrary.filter((t) => t.role !== 'current')
+
+  const openCustomizer = () => {
+    navigate(`/online-store/themes/${current?.id || 'current'}/customize`)
+  }
+
 
   return (
     <div>
@@ -118,6 +119,12 @@ export default function OnlineStorePage() {
               <div className="flex flex-wrap gap-1.5">
                 {canEdit && (
                   <>
+                    <Button
+                      size="sm"
+                      onClick={() => navigate(`/online-store/themes/${t.id}/customize`)}
+                    >
+                      Customize
+                    </Button>
                     <Button size="sm" icon={<Rocket size={12} />} onClick={() => void publishTheme(t.id).then(() => toast(`${t.name} published — it is now your live theme`))}>
                       Publish
                     </Button>

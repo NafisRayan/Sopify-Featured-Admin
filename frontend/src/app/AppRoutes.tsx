@@ -4,7 +4,16 @@ import { Sidebar } from './layout/Sidebar'
 import { HeaderBar } from './layout/HeaderBar'
 import { GlobalSearch } from './layout/GlobalSearch'
 import { SkeletonRows } from '@/components/ui'
-
+import { StorefrontLayout } from '@/storefront/StorefrontLayout'
+import { StorefrontHomePage } from '@/storefront/StorefrontHomePage'
+import { StorefrontProductPage } from '@/storefront/StorefrontProductPage'
+import { StorefrontCheckoutPage } from '@/storefront/StorefrontCheckoutPage'
+import { StorefrontOrderConfirmedPage } from '@/storefront/StorefrontOrderConfirmedPage'
+import { CustomerLoginPage } from '@/storefront/account/CustomerLoginPage'
+import { CustomerRegisterPage } from '@/storefront/account/CustomerRegisterPage'
+import { CustomerAccountDashboardPage } from '@/storefront/account/CustomerAccountDashboardPage'
+import { CustomerOrderDetailPage } from '@/storefront/account/CustomerOrderDetailPage'
+import { CustomerAddressBookPage } from '@/storefront/account/CustomerAddressBookPage'
 // ── lazy feature pages ──────────────────────────────────────────────────────
 const Dashboard = lazy(() => import('@/features/dashboard/DashboardPage'))
 const OrdersList = lazy(() => import('@/features/orders/OrdersListPage'))
@@ -17,6 +26,7 @@ const ProductsList = lazy(() => import('@/features/products/ProductsListPage'))
 const ProductNew = lazy(() => import('@/features/products/ProductNewPage'))
 const ProductDetail = lazy(() => import('@/features/products/ProductDetailPage'))
 const ProductEditor = lazy(() => import('@/features/products/ProductEditorPage'))
+const ReviewsList = lazy(() => import('@/features/reviews/ReviewsListPage'))
 const CollectionsList = lazy(() => import('@/features/collections/CollectionsListPage'))
 const CollectionDetail = lazy(() => import('@/features/collections/CollectionDetailPage'))
 const InventoryList = lazy(() => import('@/features/inventory/InventoryPage'))
@@ -34,6 +44,7 @@ const BlogDetail = lazy(() => import('@/features/content/BlogDetailPage'))
 const FilesPage = lazy(() => import('@/features/content/FilesPage'))
 const EntriesList = lazy(() => import('@/features/content/EntriesListPage'))
 const OnlineStorePage = lazy(() => import('@/features/online-store/OnlineStorePage'))
+const ThemeCustomizerPage = lazy(() => import('@/features/online-store/ThemeCustomizerPage'))
 const NavigationPage = lazy(() => import('@/features/online-store/NavigationPage'))
 const PreferencesPage = lazy(() => import('@/features/online-store/PreferencesPage'))
 const AppsPage = lazy(() => import('@/features/apps/AppsPage'))
@@ -68,7 +79,42 @@ function ScrollToTop() {
 }
 
 export function AppRoutes() {
-  const printRoute = useLocation().pathname.match(/^\/orders\/[^/]+\/print$/)
+  const location = useLocation()
+  const pathname = location.pathname
+
+  // Theme Customizer workspace (rendered full screen without admin header/sidebar)
+  if (pathname.includes('/customize')) {
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
+          <Route path="/online-store/themes/:id/customize" element={<ThemeCustomizerPage />} />
+        </Routes>
+      </Suspense>
+    )
+  }
+
+  // Storefront route branch (rendered full screen without admin sidebar)
+  if (pathname.startsWith('/store')) {
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
+          <Route path="/store" element={<StorefrontLayout />}>
+            <Route index element={<StorefrontHomePage />} />
+            <Route path="products/:handle" element={<StorefrontProductPage />} />
+            <Route path="checkout" element={<StorefrontCheckoutPage />} />
+            <Route path="order-confirmed/:orderId" element={<StorefrontOrderConfirmedPage />} />
+            <Route path="account/login" element={<CustomerLoginPage />} />
+            <Route path="account/register" element={<CustomerRegisterPage />} />
+            <Route path="account" element={<CustomerAccountDashboardPage />} />
+            <Route path="account/orders/:id" element={<CustomerOrderDetailPage />} />
+            <Route path="account/addresses" element={<CustomerAddressBookPage />} />
+          </Route>
+        </Routes>
+      </Suspense>
+    )
+  }
+
+  const printRoute = pathname.match(/^\/orders\/[^/]+\/print$/)
   if (printRoute) {
     return (
       <Suspense fallback={null}>
@@ -102,7 +148,7 @@ export function AppRoutes() {
               <Route path="/products/new" element={<ProductNew />} />
               <Route path="/products/:id" element={<ProductDetail />} />
               <Route path="/products/:id/edit" element={<ProductEditor />} />
-
+              <Route path="/reviews" element={<ReviewsList />} />
               {/* Collections */}
               <Route path="/collections" element={<CollectionsList />} />
               <Route path="/collections/:id" element={<CollectionDetail />} />

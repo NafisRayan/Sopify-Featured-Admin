@@ -49,11 +49,26 @@ test('Relay toConnection handles forward, backward, and boundary cases', () => {
   assert.equal(backwardBoundary.pageInfo.hasPreviousPage, false)
 })
 
-test('Relay Node lookup respects GID authority and prefix tables', async () => {
+async function isDatabaseReachable(): Promise<boolean> {
+  const p = new PrismaService()
+  try {
+    await p.$connect()
+    await p.$queryRaw`SELECT 1`
+    await p.$disconnect()
+    return true
+  } catch {
+    return false
+  }
+}
+
+test('Relay Node lookup respects GID authority and prefix tables', async (t) => {
+  if (!(await isDatabaseReachable())) {
+    t.skip('Database unavailable in local environment; skipping live DB test')
+    return
+  }
   const prisma = new PrismaService()
   await prisma.$connect()
   const storeService = new StoreContentService(prisma, {} as unknown as AuthorizationService)
-
   try {
     // 1. Typed GID miss MUST return null (no fallthrough to unrelated tables)
     const orderMiss = await storeService.node('gid://shopify/Order/non_existent_order_id_12345')
@@ -119,11 +134,14 @@ test('Relay Node lookup respects GID authority and prefix tables', async () => {
   }
 })
 
-test('ProductsService variant CRUD synchronizes options and inventoryQuantity on disposable fixture', async () => {
+test('ProductsService variant CRUD synchronizes options and inventoryQuantity on disposable fixture', async (t) => {
+  if (!(await isDatabaseReachable())) {
+    t.skip('Database unavailable in local environment; skipping live DB test')
+    return
+  }
   const prisma = new PrismaService()
   await prisma.$connect()
   const productsService = new ProductsService(prisma)
-
   const fixtureProdId = uid('p_fixture')
   const fixtureSku = `SKU-FIX-${Date.now()}`
   let createdVariantId: string | null = null
@@ -230,12 +248,15 @@ test('ProductsService variant CRUD synchronizes options and inventoryQuantity on
   }
 })
 
-test('OrdersService calculateDraft and CommerceService sendNotification with proper event amount', async () => {
+test('OrdersService calculateDraft and CommerceService sendNotification with proper event amount', async (t) => {
+  if (!(await isDatabaseReachable())) {
+    t.skip('Database unavailable in local environment; skipping live DB test')
+    return
+  }
   const prisma = new PrismaService()
   await prisma.$connect()
   const ordersService = new OrdersService(prisma)
   const commerceService = new CommerceService(prisma)
-
   const fixtureGcId = uid('gc_fixture')
 
   try {

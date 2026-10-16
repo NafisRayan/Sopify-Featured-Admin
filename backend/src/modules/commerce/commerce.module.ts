@@ -25,9 +25,8 @@ export class CommerceService {
 
   async createDiscount(input: Record<string, any>) {
     const code = (input.code ?? '').trim().toUpperCase()
-    if (!code) throw new Error('Give the discount a code or name')
-    if (await this.prisma.discount.findUnique({ where: { code } })) throw new Error('A discount with this code already exists')
-    if (input.type === 'percentage' && (input.value ?? 0) > 100) throw new Error('Percentage cannot exceed 100')
+    const existing = await this.prisma.discount.findFirst({ where: { code } })
+    if (existing) throw new Error('A discount with this code already exists')
     const row = await this.prisma.discount.create({
       data: {
         id: uid('disc'),
@@ -73,7 +72,7 @@ export class CommerceService {
     }
     if (input.code !== undefined) {
       const code = String(input.code).trim().toUpperCase()
-      const dup = await this.prisma.discount.findUnique({ where: { code } })
+      const dup = await this.prisma.discount.findFirst({ where: { code } })
       if (dup && dup.id !== id) throw new Error('A discount with this code already exists')
       data.code = code
     }
